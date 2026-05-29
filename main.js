@@ -2098,6 +2098,9 @@ const state = {
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
   customSize: true, outW: 1920, outH: 1080,
+  // output mode — matte-first (B/W luma for AE) by default; bound in Setup,
+  // so these must exist before the pane is built.
+  matteOutput: true, matteInvert: false,
   // particle layer (GPU compute overlay) — see particle module above
   partEnable: false,
   partCount: 120000,
@@ -3072,9 +3075,42 @@ function randomizeMode(modeId, folder) {
   pane.refresh();
 }
 
-const fPlay = pane.addFolder({ title: 'Playback', expanded: true });
-const bT = fPlay.addBinding(state, 't', { min: 0, max: 1, step: 0.001, label: 'progress' });
+// ---- Setup: the first things you set — dimensions, output mode, timing ----
+const fPlay = pane.addFolder({ title: 'Setup', expanded: true });
+
+// — dimensions (independent of any footage) —
+const sizePresets = { _v: '1920x1080' };
+fPlay.addBinding(sizePresets, '_v', {
+  label: 'size',
+  options: {
+    '1920×1080 (16:9)': '1920x1080', '1080×1920 (9:16)': '1080x1920',
+    '1080×1080 (1:1)': '1080x1080', '3840×2160 (4K)': '3840x2160',
+    '2560×1440 (16:9)': '2560x1440', '1280×720 (16:9)': '1280x720',
+    'custom': 'custom',
+  },
+}).on('change', (e) => {
+  if (e.value === 'custom') return;
+  const [w, h] = e.value.split('x').map(Number);
+  state.outW = w; state.outH = h; state.customSize = true;
+  pane.refresh(); resizeCanvas();
+});
+fPlay.addBinding(state, 'outW', { min: 16, max: 8192, step: 2, label: 'width' })
+  .on('change', () => { sizePresets._v = 'custom'; resizeCanvas(); });
+fPlay.addBinding(state, 'outH', { min: 16, max: 8192, step: 2, label: 'height' })
+  .on('change', () => { sizePresets._v = 'custom'; resizeCanvas(); });
+fPlay.addBinding(state, 'customSize', { label: 'lock to size (vs image)' }).on('change', () => resizeCanvas());
+
+// — output mode: B/W matte (default) vs the A→B image transition —
+const outputMode = { _v: 'matte' };
+fPlay.addBinding(outputMode, '_v', {
+  label: 'output',
+  options: { 'Matte (B/W)': 'matte', 'Images (A→B)': 'images' },
+}).on('change', (e) => { state.matteOutput = (e.value === 'matte'); });
+fPlay.addBinding(state, 'matteInvert', { label: 'invert (B↔W)' });
+
+// — timing —
 fPlay.addBinding(state, 'duration', { min: 0.5, max: 45, step: 0.1 });
+const bT = fPlay.addBinding(state, 't', { min: 0, max: 1, step: 0.001, label: 'progress' });
 
 function togglePlay() {
   if (state.playing) { state.playing = false; }
@@ -3114,6 +3150,7 @@ function updateTransportLabels() {
     btns[2].classList.toggle('rating-active', state.loop);
   }
 }
+fPlay.addButton({ title: '● Record matte' }).on('click', () => startRecording());
 
 // ---- top-level tabs (Playback stays above; everything else goes in a tab) ----
 const tabs = pane.addTab({
@@ -3569,27 +3606,7 @@ fDis.addBinding(state, 'seed', { min: 0, max: 999, step: 1 });
 fDis.addBinding(state, 'maskShift', { min: -0.5, max: 0.5, step: 0.005, label: 'mask shift' });
 
 // ----- Canvas size (custom transition dimensions, independent of source) -----
-const fSize = tabFrame.addFolder({ title: 'Canvas size', expanded: true });
-fSize.addBinding(state, 'customSize', { label: 'custom size' }).on('change', () => resizeCanvas());
-const sizePresets = { _v: '1920x1080' };
-fSize.addBinding(sizePresets, '_v', {
-  label: 'preset',
-  options: {
-    '1920×1080 (16:9)': '1920x1080', '1080×1920 (9:16)': '1080x1920',
-    '1080×1080 (1:1)': '1080x1080', '3840×2160 (4K)': '3840x2160',
-    '2560×1440 (16:9)': '2560x1440', '1280×720 (16:9)': '1280x720',
-    'custom': 'custom',
-  },
-}).on('change', (e) => {
-  if (e.value === 'custom') return;
-  const [w, h] = e.value.split('x').map(Number);
-  state.outW = w; state.outH = h; state.customSize = true;
-  pane.refresh(); resizeCanvas();
-});
-fSize.addBinding(state, 'outW', { min: 16, max: 8192, step: 2, label: 'width' })
-  .on('change', () => { sizePresets._v = 'custom'; if (state.customSize) resizeCanvas(); });
-fSize.addBinding(state, 'outH', { min: 16, max: 8192, step: 2, label: 'height' })
-  .on('change', () => { sizePresets._v = 'custom'; if (state.customSize) resizeCanvas(); });
+// (Canvas size moved to the top "Setup" block.)
 
 // ----- Texture (grunge / watercolor paper drives the dissolve) -----
 const fTex = tabFrame.addFolder({ title: 'Texture', expanded: true });
@@ -3614,8 +3631,7 @@ fImg.addBinding(state, 'panBy', { min: -1, max: 1, step: 0.005, label: 'B pan y'
 // ----- Export / Record -----
 state.exportFps = 25;
 state.exportSizeMode = '1920';
-state.matteOutput = false;  // emit transition as a B/W luma matte (for AE)
-state.matteInvert = false;
+// (matteOutput / matteInvert now live in the state literal — bound in Setup.)
 state.exportPadBottom = 0;  // 0 = no padding; 1 = add full-height black below; 1.416 ≈ Elverket floor ratio
 
 // Prefer HEVC (H.265) over H.264 — HEVC headroom is ~7680 vs ~3840 for AVC, so
@@ -3697,8 +3713,7 @@ function makeFilenameV2() {
 
 let recording = false;
 const fExp = tabOutput.addFolder({ title: 'Export', expanded: true });
-fExp.addBinding(state, 'matteOutput', { label: 'matte output (B/W)' });
-fExp.addBinding(state, 'matteInvert', { label: 'matte invert' });
+// (Output mode + invert moved to the top "Setup" block.)
 fExp.addBinding(state, 'exportFps', {
   label: 'fps', options: { '24 fps': 24, '25 fps': 25, '30 fps': 30, '50 fps': 50, '60 fps': 60 },
 });
