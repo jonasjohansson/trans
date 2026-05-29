@@ -113,7 +113,8 @@ struct Params {
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
   driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
-  gdCloud: f32, gdPulse: f32, _gd0: f32, _gd1: f32,
+  gdCloud: f32, gdPulse: f32, ambCount: f32, ambSize: f32,
+  ambSoft: f32, ambSpeed: f32, _amb0: f32, _amb1: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -205,22 +206,25 @@ fn ambBokeh(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853;
   var auv = uv; auv.x = auv.x * p.canvasAspect;
   let dir = vec2f(cos(p.driftAngle * 6.2831853), sin(p.driftAngle * 6.2831853)) * p.driftAmount;
+  let count = u32(mix(6.0, 40.0, p.ambCount));
+  let szMul = mix(0.45, 1.8, p.ambSize);
+  let spd = 1.0 + floor(p.ambSpeed * 3.0);   // integer -> seamless loop
   // gentle, loop-seamless defocused light field (periodic sway, never jumps)
   var v = fbm(uv * 2.2 + dir * sin(ph) * 0.12) * 0.3;
-  for (var i = 0u; i < 22u; i = i + 1u) {
+  for (var i = 0u; i < 40u; i = i + 1u) {
+    if (i >= count) { break; }
     let fi = f32(i) + 1.0;
     let phase = hash21(vec2f(fi, 6.6)) * 6.2831853;
-    let kw = 1.0 + floor(hash21(vec2f(fi, 2.2)) * 2.0);   // INTEGER cycles -> seamless loop, no skip
-    // soft elliptical float + a gentle sway along the wind direction (all periodic)
+    let kw = spd + floor(hash21(vec2f(fi, 2.2)) * 2.0);   // INTEGER cycles -> seamless loop, no skip
     let wob = 0.045 * vec2f(sin(ph * kw + phase), cos(ph * kw + phase * 1.3)) + dir * sin(ph + phase) * 0.07;
     var c = vec2f(hash21(vec2f(fi, 3.7)), hash21(vec2f(fi, 9.1))) + wob;
     c.x = c.x * p.canvasAspect;
     let d = length(auv - c);
-    let r = mix(0.03, 0.22, hash21(vec2f(fi, 5.5)));        // size / focus variation
-    let soft = mix(0.55, 0.05, hash21(vec2f(fi, 8.8)));     // edge softness
+    let r = mix(0.03, 0.22, hash21(vec2f(fi, 5.5))) * szMul;       // size / focus variation
+    let soft = mix(0.6, 0.04, hash21(vec2f(fi, 8.8)) * (0.4 + 0.6 * p.ambSoft));  // edge softness
     let disc = smoothstep(r, r * soft, d);
     let rim = exp(-pow((d - r) / (r * 0.3 + 0.004), 2.0)) * 0.5;  // defocused bokeh rim
-    let kb = 1.0 + floor(hash21(vec2f(fi, 7.7)) * 2.0);    // integer cycles -> seamless
+    let kb = spd + floor(hash21(vec2f(fi, 7.7)) * 2.0);    // integer cycles -> seamless
     let bright = 0.5 + 0.5 * (0.5 + 0.5 * sin(ph * kb + phase * 2.0));  // soft twinkle, never blinks off
     v = v + (disc + rim) * bright * mix(0.4, 1.0, hash21(vec2f(fi, 1.1)));
   }
@@ -229,9 +233,10 @@ fn ambBokeh(uv: vec2f) -> f32 {
 fn ambStreaks(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853;
   let dd = p.driftAmount * vec2f(cos(p.driftAngle * 6.2831853), sin(p.driftAngle * 6.2831853));
-  let sc = vec2f(uv.x * 6.0 + ph * 0.16, uv.y * 1.0) + dd * ph * 3.0;  // drift in chosen direction
+  let sc = vec2f(uv.x * mix(3.5, 11.0, p.ambCount) + ph * (0.08 + p.ambSpeed * 0.3),
+                 uv.y * mix(1.5, 0.7, p.ambSize)) + dd * ph * 3.0;  // density/length/drift
   var s = fbm(sc) + 0.55 * fbm(sc * vec2f(2.2, 1.0) + vec2f(ph * 0.1, 0.0));
-  s = pow(clamp((s - 0.45) * 1.9, 0.0, 1.0), 1.5);             // sharpen into streaks
+  s = pow(clamp((s - 0.45) * 1.9, 0.0, 1.0), mix(2.6, 0.9, p.ambSoft));  // sharpen->soften
   let smear = (fbm(sc + vec2f(0.0, 0.05)) + fbm(sc - vec2f(0.0, 0.05))) * 0.12;
   return clamp(s + smear, 0.0, 1.0);
 }
@@ -239,14 +244,17 @@ fn ambRipples(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853;
   var auv = uv; auv.x = auv.x * p.canvasAspect;
   let w = vec2f(fbm(auv * 3.0 + ph * 0.1), fbm(auv * 3.0 + 5.0 - ph * 0.08)) - vec2f(0.5, 0.5);
+  let nsrc = u32(mix(2.0, 6.0, p.ambCount));
   var v = 0.0;
-  for (var i = 0u; i < 3u; i = i + 1u) {
+  for (var i = 0u; i < 6u; i = i + 1u) {
+    if (i >= nsrc) { break; }
     let fi = f32(i) + 1.0;
     let c = vec2f(hash21(vec2f(fi, 1.3)), hash21(vec2f(fi, 4.8)));
     let d = length(auv + w * 0.18 - c);
-    v = v + (0.5 + 0.5 * sin(d * (16.0 + 8.0 * fi) - ph * (1.0 + fi * 0.3)));
+    let freq = mix(28.0, 9.0, p.ambSize) + fi * 4.0;     // bigger size -> longer wavelength
+    v = v + (0.5 + 0.5 * sin(d * freq - ph * (1.0 + fi * 0.3) * (0.5 + p.ambSpeed)));
   }
-  return clamp(pow(clamp(v / 3.0, 0.0, 1.0), 2.0), 0.0, 1.0);   // caustic sharpen
+  return clamp(pow(clamp(v / f32(nsrc), 0.0, 1.0), mix(2.6, 1.1, p.ambSoft)), 0.0, 1.0);  // caustic sharp->soft
 }
 fn ambAurora(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853 * (0.4 + p.auroraSpeed * 1.4);
@@ -283,9 +291,10 @@ fn ambGlare(uv: vec2f) -> f32 {
   var duv = uv - sun; duv.x = duv.x * p.canvasAspect;
   let d = length(duv);
   let ang = atan2(duv.y, duv.x);
-  let rays = 0.5 + 0.5 * sin(ang * 7.0 + ph) * (fbm(vec2f(ang * 2.0, ph * 0.3) + 3.0) + 0.4);
-  let core = exp(-d * 4.0);
-  let halo = exp(-d * 1.3) * (0.4 + 0.6 * rays);
+  let nrays = mix(4.0, 16.0, p.ambCount);          // ray count
+  let rays = 0.5 + 0.5 * sin(ang * nrays + ph * (0.5 + p.ambSpeed)) * (fbm(vec2f(ang * 2.0, ph * 0.3) + 3.0) + 0.4);
+  let core = exp(-d * mix(6.0, 2.0, p.ambSize));   // bigger size -> wider core
+  let halo = exp(-d * mix(2.0, 0.7, p.ambSize)) * (0.4 + 0.6 * mix(rays, 1.0, p.ambSoft));  // soft -> less rayed
   let foliage = smoothstep(0.3, 0.72, fbm(uv * 5.0 + vec2f(ph * 0.1, -ph * 0.15)));
   return clamp((core + halo) * mix(0.45, 1.0, foliage), 0.0, 1.0);
 }
@@ -1570,7 +1579,8 @@ struct Params {
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
   driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
-  gdCloud: f32, gdPulse: f32, _gd0: f32, _gd1: f32,
+  gdCloud: f32, gdPulse: f32, ambCount: f32, ambSize: f32,
+  ambSoft: f32, ambSpeed: f32, _amb0: f32, _amb1: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -1804,7 +1814,8 @@ struct Params {
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
   driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
-  gdCloud: f32, gdPulse: f32, _gd0: f32, _gd1: f32,
+  gdCloud: f32, gdPulse: f32, ambCount: f32, ambSize: f32,
+  ambSoft: f32, ambSpeed: f32, _amb0: f32, _amb1: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var texA: texture_2d<f32>;
@@ -1920,7 +1931,7 @@ function makeDisplayBindGroup(finalState) {
 //   5  seed         13  scaleB.y                                          29 bloomCount     37 saltContrast
 //   6  validA       14  offsetB.x                                         30 bloomRim       38 saltBias
 //   7  validB       15  offsetB.y                                         31 bloomRate      39 saltImage
-const UBO_SIZE = 896;  // + drift (216-217) + godray settings (218-221)
+const UBO_SIZE = 912;  // + godray (218-221) + ambient count/size/soft/speed (222-225)
 const uniformBuffer = device.createBuffer({
   size: UBO_SIZE,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -2352,6 +2363,7 @@ const state = {
   auroraDensity: 0.5, auroraHeight: 0.5, auroraSpeed: 0.4, auroraDark: 0.3, auroraWave: 0.5,  // aurora settings
   driftAngle: 0.25, driftAmount: 0.3,  // wind direction + strength for ambient drift
   gdIntensity: 0.5, gdBeams: 0.5, gdCloud: 0.5, gdPulse: 0.4,  // godray settings
+  ambCount: 0.5, ambSize: 0.5, ambSoft: 0.5, ambSpeed: 0.4,  // shared bokeh/ripples/glare/streaks
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2764,6 +2776,10 @@ function writeUniforms() {
   uboF32[219] = state.gdBeams;
   uboF32[220] = state.gdCloud;
   uboF32[221] = state.gdPulse;
+  uboF32[222] = state.ambCount;
+  uboF32[223] = state.ambSize;
+  uboF32[224] = state.ambSoft;
+  uboF32[225] = state.ambSpeed;
   // -- 80..95 -- new painterly modes (16..21) + global paper grain
   uboF32[80] = state.strokeScale;
   uboF32[81] = state.strokeAniso;
@@ -3871,6 +3887,12 @@ fAurora.addBinding(state, 'auroraSpeed',   { min: 0, max: 1, step: 0.01, label: 
 fAurora.addBinding(state, 'auroraWave',    { min: 0, max: 1, step: 0.01, label: 'wave through' });
 fAurora.addBinding(state, 'auroraDark',    { min: 0, max: 1, step: 0.01, label: 'darkness' });
 
+const fAmbient = fWater.addFolder({ title: 'Ambient', expanded: true });
+fAmbient.addBinding(state, 'ambCount', { min: 0, max: 1, step: 0.01, label: 'count / density' });
+fAmbient.addBinding(state, 'ambSize',  { min: 0, max: 1, step: 0.01, label: 'size / scale' });
+fAmbient.addBinding(state, 'ambSoft',  { min: 0, max: 1, step: 0.01, label: 'softness' });
+fAmbient.addBinding(state, 'ambSpeed', { min: 0, max: 1, step: 0.01, label: 'speed' });
+
 const fGodray = fWater.addFolder({ title: 'Godrays', expanded: true });
 fGodray.addBinding(state, 'gdIntensity', { min: 0, max: 1, step: 0.01, label: 'intensity' });
 fGodray.addBinding(state, 'gdBeams',     { min: 0, max: 1, step: 0.01, label: 'beam count / thinness' });
@@ -3880,6 +3902,7 @@ fGodray.addBinding(state, 'gdPulse',     { min: 0, max: 1, step: 0.01, label: 'p
 function updateModeFolders() {
   fAurora.hidden = state.mode !== 38;
   fGodray.hidden = state.mode !== 39;
+  fAmbient.hidden = !(state.mode >= 33 && state.mode <= 36);  // bokeh/ripples/glare/streaks
   fRim.hidden    = state.mode !== 1;
   fPaper.hidden  = state.mode !== 2;
   fBlooms.hidden = state.mode !== 3;
@@ -5038,7 +5061,7 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 12;
+const SESSION_VERSION = 13;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
@@ -5047,6 +5070,7 @@ const PERSIST_KEYS = [
   'pointStagger', 'pointRandom', 'paintBrush',
   'auroraDensity', 'auroraHeight', 'auroraSpeed', 'auroraDark', 'auroraWave', 'driftAngle', 'driftAmount',
   'gdIntensity', 'gdBeams', 'gdCloud', 'gdPulse',
+  'ambCount', 'ambSize', 'ambSoft', 'ambSpeed',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
   'partEnable', 'partCount', 'partBurst', 'partSpeed', 'partCurl', 'partTrail',
