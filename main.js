@@ -108,7 +108,7 @@ struct Params {
   lightIntensity: f32, lightSpread: f32, lightPeakT: f32, lightFlashWidth: f32,
   lightColor: vec3f, videoSaturate: f32,
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
-  originAmount: f32, originX: f32, originY: f32, _o0: f32,
+  originAmount: f32, originX: f32, originY: f32, turbulence: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -940,6 +940,16 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
     let d = clamp(length(duv) / (0.5 * diag), 0.0, 1.0);
     mask = mix(mask, d, p.originAmount);
   }
+  // Turbulence: domain-warped multi-octave noise fractures the reveal front into
+  // organic, ink-in-water tendrils instead of a smooth glossy edge. Higher =
+  // finer, more chaotic detail.
+  if (p.turbulence > 0.0001) {
+    let sc = mix(3.0, 10.0, p.turbulence);
+    let w = vec2f(fbm(uv * sc + p.seed * 0.11),
+                  fbm(uv * sc + vec2f(4.7, 2.3) + p.seed * 0.11)) - vec2f(0.5, 0.5);
+    let n = fbm(uv * sc * 1.8 + w * 2.5 + p.seed * 0.31);
+    mask = clamp(mask + (n - 0.5) * p.turbulence * 0.9, 0.0, 1.0);
+  }
   mask = clamp(mask + p.maskShift, 0.0, 1.0);
   var mixT = clamp(smoothstep(mask - sp, mask + sp, t), 0.0, 1.0);
   // Burn mode: hard step at the front — no crossfade between A and B at all.
@@ -1398,7 +1408,7 @@ struct Params {
   lightIntensity: f32, lightSpread: f32, lightPeakT: f32, lightFlashWidth: f32,
   lightColor: vec3f, videoSaturate: f32,
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
-  originAmount: f32, originX: f32, originY: f32, _o0: f32,
+  originAmount: f32, originX: f32, originY: f32, turbulence: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -1627,7 +1637,7 @@ struct Params {
   lightIntensity: f32, lightSpread: f32, lightPeakT: f32, lightFlashWidth: f32,
   lightColor: vec3f, videoSaturate: f32,
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
-  originAmount: f32, originX: f32, originY: f32, _o0: f32,
+  originAmount: f32, originX: f32, originY: f32, turbulence: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var texA: texture_2d<f32>;
@@ -2074,7 +2084,14 @@ async function uploadImageToSlot(img, slot) {
   bindGroup = makeBindGroup();
   advec.needsReset = true;
   console.log(`[upload ${slot}] new bind group ready`);
-  if (slot === 'A' && state.originFromImage) computeOriginFromImage(img);
+  if (slot === 'A') {
+    // A source image dictates the aspect ratio — drop the custom size lock so
+    // the canvas matches A's native dimensions.
+    state.customSize = false;
+    if (typeof pane !== 'undefined') pane.refresh();
+    if (typeof resizeCanvas === 'function') resizeCanvas();
+    if (state.originFromImage) computeOriginFromImage(img);
+  }
 }
 
 // Derive a reveal origin from image A's bright focal region (brightness-weighted
@@ -2154,10 +2171,11 @@ const state = {
   reverse: false,
   duration: 15.0,
   // texture input (grunge / watercolor paper) — modulates the reveal + bg tint
-  texImg: null, texAmount: 0.0, texBg: 0.0, texAspect: 1.0, texFit: 1,  // fit: 0 stretch,1 contain,2 cover
+  texImg: null, texAmount: 0.0, texBg: 0.0, texAspect: 1.0, texFit: 2,  // fit: 0 stretch,1 contain,2 cover (default cover = fill)
   // origin: transitions grow from within (inside-out). Default centre; auto-set
   // from image A's bright focal region when an image is loaded.
   originAmount: 0.4, originX: 0.5, originY: 0.5, originFromImage: true,
+  turbulence: 0.35,  // organic ink-in-water break-up of the reveal front
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2540,6 +2558,7 @@ function writeUniforms() {
   uboF32[172] = state.originAmount;
   uboF32[173] = state.originX;
   uboF32[174] = state.originY;
+  uboF32[175] = state.turbulence;
   // -- 80..95 -- new painterly modes (16..21) + global paper grain
   uboF32[80] = state.strokeScale;
   uboF32[81] = state.strokeAniso;
@@ -3179,16 +3198,11 @@ fPlay.addBinding(state, 'outH', { step: 1, format: (v) => `${Math.round(v)}`, la
   .on('change', () => { sizePresets._v = 'custom'; resizeCanvas(); });
 fPlay.addBinding(state, 'customSize', { label: 'lock to size (vs image)' }).on('change', () => resizeCanvas());
 
-// — output mode: B/W matte (default) vs the A→B image transition —
-const outputMode = { _v: 'matte' };
-fPlay.addBinding(outputMode, '_v', {
-  label: 'output',
-  options: { 'Matte (B/W)': 'matte', 'Images (A→B)': 'images' },
-}).on('change', (e) => { state.matteOutput = (e.value === 'matte'); });
+// — B/W matte output (always). Invert flips black<->white direction. —
 fPlay.addBinding(state, 'matteInvert', { label: 'invert (B↔W)' });
 
-// — timing —
-fPlay.addBinding(state, 'duration', { min: 0.5, max: 45, step: 0.1 });
+// — timing — duration as a plain number field (type it), not a slider —
+fPlay.addBinding(state, 'duration', { step: 0.5, format: (v) => `${v.toFixed(1)}s`, label: 'duration' });
 const bT = fPlay.addBinding(state, 't', { min: 0, max: 1, step: 0.001, label: 'progress' });
 
 function togglePlay() {
@@ -3229,23 +3243,28 @@ function updateTransportLabels() {
     btns[2].classList.toggle('rating-active', state.loop);
   }
 }
-fPlay.addButton({ title: '● Record matte' }).on('click', () => startRecording());
+const btnRecordSetup = fPlay.addButton({ title: '● Record matte' });
+btnRecordSetup.on('click', async () => {
+  btnRecordSetup.title = 'Recording…';
+  try { await startRecording(); } finally { btnRecordSetup.title = '● Record matte'; }
+});
 
 // ---- top-level tabs (Setup stays above; everything else goes in a tab) ----
 const tabs = pane.addTab({
   pages: [
     { title: 'Mode' },
-    { title: 'Look' },
-    { title: 'Output' },
+    { title: 'Texture' },
   ],
 });
 const tabMode    = tabs.pages[0];
-const tabFrame   = tabs.pages[1];  // "Look" — texture + style
-const tabOutput  = tabs.pages[2];
-// Particles / presets / segmentation are dropped from this matte-builder build.
-// Their UI-building code still runs but into a hidden folder so it never shows.
+const tabTexture = tabs.pages[1];
+// Output export, particles, presets, segmentation, framing, style are dropped
+// from this matte-builder build (B/W mattes via the Setup "Record matte"
+// button with sensible defaults). Their UI still builds, into a hidden folder.
 const _hiddenTab = pane.addFolder({ title: '·', expanded: false });
 _hiddenTab.hidden = true;
+const tabOutput    = _hiddenTab;  // export settings (hidden; defaults used)
+const tabFrame     = _hiddenTab;  // Style + Framing (hidden)
 const tabParticles = _hiddenTab;
 const tabSaved     = _hiddenTab;
 const tabSegment   = _hiddenTab;
@@ -3683,6 +3702,7 @@ fDis.addBinding(state, 'originY', { min: 0, max: 1, step: 0.01, label: 'origin y
 fDis.addBinding(state, 'originFromImage', { label: 'origin from image A' })
   .on('change', () => { if (state.originFromImage && state.imgA) computeOriginFromImage(state.imgA); });
 // — global reveal shaping (every mode) —
+fDis.addBinding(state, 'turbulence', { min: 0, max: 1, step: 0.01, label: 'turbulence (ink)' });
 fDis.addBinding(state, 'spread',    { min: 0, max: 1, step: 0.01, label: 'edge softness' });
 fDis.addBinding(state, 'maskScale', { min: 0.3, max: 4, step: 0.05, label: 'mask scale' });
 fDis.addBinding(state, 'curve', { label: 'timing', options: { 'linear': 0, 'ease-in-out': 1, 'ease-in': 2, 'ease-out': 3 } });
@@ -3696,7 +3716,7 @@ fDis.addBinding(state, 'edges',     { min: -1, max: 1, step: 0.01, label: 'edges
 // (Canvas size moved to the top "Setup" block.)
 
 // ----- Texture (grunge / watercolor paper drives the dissolve) -----
-const fTex = tabFrame.addFolder({ title: 'Texture', expanded: true });
+const fTex = tabTexture.addFolder({ title: 'Texture', expanded: true });
 fTex.addButton({ title: 'Load texture…' }).on('click', () => {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = 'image/*';
@@ -4675,11 +4695,14 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 // Expose for headless / automation experiments
 // ----- Auto-persist all settings to localStorage -----
 const SESSION_LS_KEY = 'trans:session';
+// Bump when default values change so stale saved sessions don't mask new
+// defaults (e.g. matte-first, cover texture fit, turbulence, origin).
+const SESSION_VERSION = 3;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
   'customSize', 'outW', 'outH', 'texAmount', 'texBg', 'texFit',
-  'originAmount', 'originX', 'originY', 'originFromImage',
+  'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
   'partEnable', 'partCount', 'partBurst', 'partSpeed', 'partCurl', 'partTrail',
@@ -4688,7 +4711,7 @@ const PERSIST_KEYS = [
 ];
 function saveSession() {
   try {
-    const out = {};
+    const out = { __v: SESSION_VERSION };
     for (const k of PERSIST_KEYS) out[k] = state[k];
     localStorage.setItem(SESSION_LS_KEY, JSON.stringify(out));
   } catch {}
@@ -4696,7 +4719,7 @@ function saveSession() {
 function loadSession() {
   try {
     const s = JSON.parse(localStorage.getItem(SESSION_LS_KEY) || 'null');
-    if (!s) return;
+    if (!s || s.__v !== SESSION_VERSION) return;  // discard stale-schema sessions
     for (const k of PERSIST_KEYS) if (k in s) state[k] = s[k];
     // sync the pad-preset dropdown to whatever the restored slider value is
     const presets = [0, 0.5, 1.0, 1.416, 2.0];
