@@ -174,6 +174,43 @@ fn hash21(q: vec2f) -> f32 {
   x += dot(x, x + 45.32);
   return fract(x.x * x.y);
 }
+// ---- ambient/lingering matte generators (loop over t, never fade to white) ----
+fn ambBokeh(uv: vec2f) -> f32 {
+  let ph = p.t * 6.2831853;
+  var v = 0.0;
+  for (var i = 0u; i < 16u; i = i + 1u) {
+    let fi = f32(i) + 1.0;
+    let sp = 0.5 + 1.5 * hash21(vec2f(fi, 2.2));
+    let drift = 0.07 * vec2f(sin(ph * sp + fi), cos(ph * sp * 0.8 + fi * 1.7));
+    var duv = uv - (vec2f(hash21(vec2f(fi, 3.7)), hash21(vec2f(fi, 9.1))) + drift);
+    duv.x = duv.x * p.canvasAspect;
+    let r = mix(0.05, 0.16, hash21(vec2f(fi, 5.5)));
+    let dot = smoothstep(r, r * 0.15, length(duv));
+    v = v + dot * (0.45 + 0.55 * sin(ph * sp + fi * 2.3));
+  }
+  return clamp(v, 0.0, 1.0);
+}
+fn ambRipples(uv: vec2f) -> f32 {
+  let ph = p.t * 6.2831853;
+  var v = 0.0;
+  for (var i = 0u; i < 4u; i = i + 1u) {
+    let fi = f32(i) + 1.0;
+    var duv = uv - vec2f(hash21(vec2f(fi, 1.3)), hash21(vec2f(fi, 4.8)));
+    duv.x = duv.x * p.canvasAspect;
+    let d = length(duv);
+    let freq = 18.0 + 10.0 * hash21(vec2f(fi, 6.0));
+    v = v + (0.5 + 0.5 * sin(d * freq - ph * (1.0 + fi * 0.3))) * exp(-d * 2.0);
+  }
+  return clamp(v / 1.5, 0.0, 1.0);
+}
+fn ambGlare(uv: vec2f) -> f32 {
+  let ph = p.t * 6.2831853;
+  var duv = uv - vec2f(0.5, 0.5);
+  duv.x = duv.x * p.canvasAspect;
+  let d = length(duv);
+  let rays = 0.5 + 0.5 * sin(atan2(duv.y, duv.x) * 8.0 + ph);
+  return clamp(exp(-d * 3.5) + exp(-d * 1.5) * rays * 0.6, 0.0, 1.0);
+}
 fn vnoise(q: vec2f) -> f32 {
   let i = floor(q);
   let f = fract(q);
@@ -1317,6 +1354,10 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
       effMixT = 0.0;
     }
   }
+  // Ambient/lingering modes output a looping field directly (not a 0->1 reveal).
+  if (p.mode == 33u) { effMixT = ambBokeh(uv); }
+  else if (p.mode == 34u) { effMixT = ambRipples(uv); }
+  else if (p.mode == 35u) { effMixT = ambGlare(uv); }
   // Per-slot alpha comes straight from sampleFit: a PNG's own alpha channel for
   // image slots (valid==1u), 0 for 'transparent' fill mode (valid==3u), and 1 for
   // bg/solid (valid 0u/2u). Final alpha mixes the same way as RGB; output is
@@ -3444,6 +3485,9 @@ const MODE_OPTIONS = {
   'Film melt — ink burn from center':     29,
   'Light bloom — overexposure to reveal': 30,
   'Texture — reveal by luminance':        32,
+  'Ambient — bokeh (looping)':            33,
+  'Ambient — water ripples (looping)':    34,
+  'Ambient — sun glare (looping)':        35,
 };
 const MODE_NAMES_FULL = Object.fromEntries(Object.entries(MODE_OPTIONS).map(([n, id]) => [id, n]));
 fWater.addBinding(state, 'mode', {
