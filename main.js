@@ -108,6 +108,7 @@ struct Params {
   lightIntensity: f32, lightSpread: f32, lightPeakT: f32, lightFlashWidth: f32,
   lightColor: vec3f, videoSaturate: f32,
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
+  originAmount: f32, originX: f32, originY: f32, _o0: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -928,6 +929,17 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
     let texL = texFitLuma(uv);
     mask = clamp(mask + (texL - 0.5) * p.texAmount, 0.0, 1.0);
   }
+  // Origin bias: blend the mode's mask toward a radial distance from an origin
+  // point so the transition grows from WITHIN (inside-out) rather than sweeping
+  // from the edges. Origin defaults to centre, or is derived from image A's
+  // bright focal region. The mode's own texture still breaks up the front.
+  if (p.originAmount > 0.0001) {
+    var duv = uv - vec2f(p.originX, p.originY);
+    duv.x = duv.x * p.canvasAspect;
+    let diag = sqrt(p.canvasAspect * p.canvasAspect + 1.0);
+    let d = clamp(length(duv) / (0.5 * diag), 0.0, 1.0);
+    mask = mix(mask, d, p.originAmount);
+  }
   mask = clamp(mask + p.maskShift, 0.0, 1.0);
   var mixT = clamp(smoothstep(mask - sp, mask + sp, t), 0.0, 1.0);
   // Burn mode: hard step at the front — no crossfade between A and B at all.
@@ -1386,6 +1398,7 @@ struct Params {
   lightIntensity: f32, lightSpread: f32, lightPeakT: f32, lightFlashWidth: f32,
   lightColor: vec3f, videoSaturate: f32,
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
+  originAmount: f32, originX: f32, originY: f32, _o0: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -1614,6 +1627,7 @@ struct Params {
   lightIntensity: f32, lightSpread: f32, lightPeakT: f32, lightFlashWidth: f32,
   lightColor: vec3f, videoSaturate: f32,
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
+  originAmount: f32, originX: f32, originY: f32, _o0: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var texA: texture_2d<f32>;
@@ -1729,7 +1743,7 @@ function makeDisplayBindGroup(finalState) {
 //   5  seed         13  scaleB.y                                          29 bloomCount     37 saltContrast
 //   6  validA       14  offsetB.x                                         30 bloomRim       38 saltBias
 //   7  validB       15  offsetB.y                                         31 bloomRate      39 saltImage
-const UBO_SIZE = 688;
+const UBO_SIZE = 704;  // +16 for origin (originAmount, originX, originY, _o0)
 const uniformBuffer = device.createBuffer({
   size: UBO_SIZE,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -2060,6 +2074,30 @@ async function uploadImageToSlot(img, slot) {
   bindGroup = makeBindGroup();
   advec.needsReset = true;
   console.log(`[upload ${slot}] new bind group ready`);
+  if (slot === 'A' && state.originFromImage) computeOriginFromImage(img);
+}
+
+// Derive a reveal origin from image A's bright focal region (brightness-weighted
+// centroid) so the transition starts "from within the painting".
+function computeOriginFromImage(img) {
+  try {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 64;
+    const cx = c.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(img, 0, 0, 64, 64);
+    const d = cx.getImageData(0, 0, 64, 64).data;
+    let sx = 0, sy = 0, sw = 0;
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const i = (y * 64 + x) * 4;
+      const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+      const w = l * l;  // bias toward bright "light source" regions
+      sx += x * w; sy += y * w; sw += w;
+    }
+    if (sw > 0) {
+      state.originX = (sx / sw) / 63;
+      state.originY = (sy / sw) / 63;
+      if (typeof pane !== 'undefined') pane.refresh();
+    }
+  } catch {}
 }
 
 // ---- texture input (grunge / watercolor paper) ----
@@ -2117,6 +2155,9 @@ const state = {
   duration: 15.0,
   // texture input (grunge / watercolor paper) — modulates the reveal + bg tint
   texImg: null, texAmount: 0.0, texBg: 0.0, texAspect: 1.0, texFit: 1,  // fit: 0 stretch,1 contain,2 cover
+  // origin: transitions grow from within (inside-out). Default centre; auto-set
+  // from image A's bright focal region when an image is loaded.
+  originAmount: 0.4, originX: 0.5, originY: 0.5, originFromImage: true,
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2495,6 +2536,10 @@ function writeUniforms() {
   uboF32[169] = state.paperFollow;
   uboF32[170] = state.paperPatches;
   uboF32[171] = state.videoDisplaceAmount;
+  // -- 172..175 -- origin (inside-out reveal)
+  uboF32[172] = state.originAmount;
+  uboF32[173] = state.originX;
+  uboF32[174] = state.originY;
   // -- 80..95 -- new painterly modes (16..21) + global paper grain
   uboF32[80] = state.strokeScale;
   uboF32[81] = state.strokeAniso;
@@ -3630,14 +3675,22 @@ function updateModeFolders() {
 }
 updateModeFolders();
 
-const fDis = tabMode.addFolder({ title: 'Dissolve', expanded: true });
-fDis.addBinding(state, 'organic',   { min: 0, max: 1, step: 0.01 });
-fDis.addBinding(state, 'edges',     { min: -1, max: 1, step: 0.01 });
-fDis.addBinding(state, 'spread',    { min: 0, max: 1, step: 0.01 });
+const fDis = tabMode.addFolder({ title: 'Reveal', expanded: true });
+// — origin: grow from within (inside-out) — applies to every mode —
+fDis.addBinding(state, 'originAmount', { min: 0, max: 1, step: 0.01, label: 'from within' });
+fDis.addBinding(state, 'originX', { min: 0, max: 1, step: 0.01, label: 'origin x' });
+fDis.addBinding(state, 'originY', { min: 0, max: 1, step: 0.01, label: 'origin y' });
+fDis.addBinding(state, 'originFromImage', { label: 'origin from image A' })
+  .on('change', () => { if (state.originFromImage && state.imgA) computeOriginFromImage(state.imgA); });
+// — global reveal shaping (every mode) —
+fDis.addBinding(state, 'spread',    { min: 0, max: 1, step: 0.01, label: 'edge softness' });
 fDis.addBinding(state, 'maskScale', { min: 0.3, max: 4, step: 0.05, label: 'mask scale' });
-fDis.addBinding(state, 'curve', { options: { 'linear': 0, 'ease-in-out': 1, 'ease-in': 2, 'ease-out': 3 } });
+fDis.addBinding(state, 'curve', { label: 'timing', options: { 'linear': 0, 'ease-in-out': 1, 'ease-in': 2, 'ease-out': 3 } });
 fDis.addBinding(state, 'seed', { min: 0, max: 999, step: 1 });
 fDis.addBinding(state, 'maskShift', { min: -0.5, max: 0.5, step: 0.005, label: 'mask shift' });
+// — only affects the default "off (smooth)" dissolve —
+fDis.addBinding(state, 'organic',   { min: 0, max: 1, step: 0.01, label: 'organic (smooth)' });
+fDis.addBinding(state, 'edges',     { min: -1, max: 1, step: 0.01, label: 'edges (smooth)' });
 
 // ----- Canvas size (custom transition dimensions, independent of source) -----
 // (Canvas size moved to the top "Setup" block.)
@@ -4626,6 +4679,7 @@ const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
   'customSize', 'outW', 'outH', 'texAmount', 'texBg', 'texFit',
+  'originAmount', 'originX', 'originY', 'originFromImage',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
   'partEnable', 'partCount', 'partBurst', 'partSpeed', 'partCurl', 'partTrail',
