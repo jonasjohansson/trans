@@ -110,7 +110,7 @@ struct Params {
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
   originAmount: f32, originX: f32, originY: f32, turbulence: f32,
   originPts: array<vec4f, 8>,
-  originCount: u32, _oc0: u32, _oc1: u32, _oc2: u32,
+  originCount: u32, flow: f32, _oc1: u32, _oc2: u32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -960,9 +960,12 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
   // finer, more chaotic detail.
   if (p.turbulence > 0.0001) {
     let sc = mix(3.0, 10.0, p.turbulence);
-    let w = vec2f(fbm(uv * sc + p.seed * 0.11),
-                  fbm(uv * sc + vec2f(4.7, 2.3) + p.seed * 0.11)) - vec2f(0.5, 0.5);
-    let n = fbm(uv * sc * 1.8 + w * 2.5 + p.seed * 0.31);
+    // flow: drift the turbulent field over time so the ink churns and rises as
+    // the transition plays, instead of a static front sweeping a fixed texture.
+    let dr = p.t * p.flow * 1.6;
+    let w = vec2f(fbm(uv * sc + vec2f(dr, 0.0) + p.seed * 0.11),
+                  fbm(uv * sc + vec2f(4.7, 2.3 - dr) + p.seed * 0.11)) - vec2f(0.5, 0.5);
+    let n = fbm(uv * sc * 1.8 + w * 2.5 + vec2f(0.0, -dr) + p.seed * 0.31);
     mask = clamp(mask + (n - 0.5) * p.turbulence * 0.9, 0.0, 1.0);
   }
   // Spread the mask across the full [0,1] timeline so the reveal keeps arriving
@@ -1429,7 +1432,7 @@ struct Params {
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
   originAmount: f32, originX: f32, originY: f32, turbulence: f32,
   originPts: array<vec4f, 8>,
-  originCount: u32, _oc0: u32, _oc1: u32, _oc2: u32,
+  originCount: u32, flow: f32, _oc1: u32, _oc2: u32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -1660,7 +1663,7 @@ struct Params {
   paperGrowth: f32, paperFollow: f32, paperPatches: f32, videoDisplaceAmount: f32,
   originAmount: f32, originX: f32, originY: f32, turbulence: f32,
   originPts: array<vec4f, 8>,
-  originCount: u32, _oc0: u32, _oc1: u32, _oc2: u32,
+  originCount: u32, flow: f32, _oc1: u32, _oc2: u32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var texA: texture_2d<f32>;
@@ -2201,6 +2204,7 @@ const state = {
   originPoints: [], placePoints: false,  // click-placed emission points
   pointStagger: 0.5, pointRandom: 0.7,   // stagger point start times + randomness
   turbulence: 0.35,  // organic ink-in-water break-up of the reveal front
+  flow: 0.3,         // animate the turbulence over time (churning/rising)
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2597,6 +2601,7 @@ function writeUniforms() {
     uboF32[o] = pts[i].x; uboF32[o + 1] = pts[i].y; uboF32[o + 2] = startT; uboF32[o + 3] = 0;
   }
   uboU32[208] = nPts;
+  uboF32[209] = state.flow;  // turbulence time-drift (animated ink)
   // -- 80..95 -- new painterly modes (16..21) + global paper grain
   uboF32[80] = state.strokeScale;
   uboF32[81] = state.strokeAniso;
@@ -3717,6 +3722,7 @@ const fDis = tabMode.addFolder({ title: 'Reveal', expanded: true });
 // — core: where it starts and how organic it feels (every mode) —
 fDis.addBinding(state, 'originAmount', { min: 0, max: 1, step: 0.01, label: 'from within' });
 fDis.addBinding(state, 'turbulence', { min: 0, max: 1, step: 0.01, label: 'turbulence (ink)' });
+fDis.addBinding(state, 'flow', { min: 0, max: 1, step: 0.01, label: 'flow (animate)' });
 fDis.addBinding(state, 'spread',    { min: 0, max: 1, step: 0.01, label: 'edge softness' });
 // — start points: click on the canvas to set where the reveal emanates from —
 const btnPlace = fDis.addButton({ title: '✛ Place start points' });
@@ -4761,12 +4767,12 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 4;
+const SESSION_VERSION = 5;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
   'customSize', 'outW', 'outH', 'texAmount', 'texBg', 'texFit',
-  'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence', 'originPoints',
+  'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence', 'flow', 'originPoints',
   'pointStagger', 'pointRandom',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
