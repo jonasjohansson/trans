@@ -2244,17 +2244,16 @@ function composedFit(slot, cw, ch) {
 }
 
 function resizeCanvas() {
-  if (!state.customSize && !state.imgA && !state.imgB) return;
   const minimized = document.body.classList.contains('minimized');
   const sidePanel = minimized ? 0 : 360;
   const padding = minimized ? 0 : 32;
   const maxW = window.innerWidth - sidePanel - padding;
   const maxH = window.innerHeight - padding;
   let w, h;
-  if (state.customSize) {
-    // Custom transition dimensions — independent of source footage size. The
-    // image fit (composedFit) adapts A/B into this canvas (letterbox / fill per
-    // fit mode), so the transition canvas is whatever size you ask for.
+  // Use the custom transition dimensions whenever requested, OR whenever there
+  // is no source image — trans is a matte builder, so image-free it always
+  // renders at the chosen size (never blank).
+  if (state.customSize || (!state.imgA && !state.imgB)) {
     w = Math.max(2, Math.round(state.outW));
     h = Math.max(2, Math.round(state.outH));
   } else {
@@ -2518,9 +2517,8 @@ function render() {
 
 // Synchronous GPU draw — used by the rAF render loop and by the recorder.
 function renderFrame() {
-  // With a custom canvas size the tool runs image-free (matte / particle
-  // generator), so only bail when there's nothing to render AND no fixed size.
-  if (!state.imgA && !state.imgB && !state.customSize) return;
+  // Matte-first: always render. Image-free we render the B/W matte at the
+  // custom dimensions; with images we render the A->B transition.
   // Sync the T-slot video to state.t. Strategy: rather than seek per render
   // frame (expensive for codecs with sparse keyframes), match the video's
   // playbackRate to state.duration so it naturally plays in sync. Only re-seek
@@ -3829,9 +3827,8 @@ function codecMaxDim(codecString) {
 
 async function startRecording(opts = {}) {
   if (recording) return;
-  // Allow image-free recording: with a custom size the tool is a matte/particle
-  // generator, so we only need a sized canvas — not both source images.
-  if (!state.imgA && !state.imgB && !state.customSize) return;
+  // Matte-first: record whatever the (always-sized) canvas shows — image-free
+  // matte or A->B transition. No image requirement.
 
   const fps = state.exportFps;
   const sizeMode = state.exportSizeMode;
