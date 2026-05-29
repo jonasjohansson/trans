@@ -112,7 +112,8 @@ struct Params {
   originPts: array<vec4f, 8>,
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
-  driftAngle: f32, driftAmount: f32, _da0: f32, _da1: f32,
+  driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
+  gdCloud: f32, gdPulse: f32, _gd0: f32, _gd1: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -296,15 +297,16 @@ fn ambGodrays(uv: vec2f) -> f32 {
   let ang = atan2(d.x, d.y);                  // 0 = straight down from the sun
   let dist = length(d);
   let drift = ph * (0.03 + p.driftAmount * 0.1);
-  // varied-width beams: organic 1D noise along the angle (not uniform stripes), so
-  // some shafts are wide and some thin
-  let beams = pow(clamp(fbm(vec2f(ang * 7.0 + drift, ph * 0.05)) * 1.5, 0.0, 1.0), 1.8);
-  // coarse cloud gaps the light leaks through
-  let gaps  = smoothstep(0.34, 0.82, fbm(vec2f(ang * 3.0 + drift, dist * 2.0 + 1.0)));
+  // beam size: fewer/wider at low gdBeams, many/thin at high
+  let beams = pow(clamp(fbm(vec2f(ang * mix(4.0, 11.0, p.gdBeams) + drift, ph * 0.05)) * 1.5, 0.0, 1.0), 1.8);
+  // cloud break-through: higher gdCloud lowers the gap threshold so more light passes
+  let gaps  = smoothstep(mix(0.55, 0.18, p.gdCloud), 0.85, fbm(vec2f(ang * 3.0 + drift, dist * 2.0 + 1.0)));
   // dappled foliage / tree-canopy breakup (finer, scrolling)
   let foliage = smoothstep(0.35, 0.78, fbm(uv * 9.0 + vec2f(drift, ph * 0.04)));
   let fade  = exp(-dist * 1.0) * mix(0.55, 1.0, foliage);   // brighter near the sun, fading down
-  return clamp((beams * gaps + 0.12) * fade * 2.3, 0.0, 1.0);
+  // pulse: the light grows in and out / more & less intense over the loop
+  let pulse = mix(1.0, 0.35 + 0.65 * (0.5 + 0.5 * sin(ph + fbm(vec2f(ph * 0.2, 3.0)) * 3.0)), p.gdPulse);
+  return clamp((beams * gaps + 0.1) * fade * 2.3 * mix(0.4, 1.6, p.gdIntensity) * pulse, 0.0, 1.0);
 }
 
 fn sampleFit(tex: texture_2d<f32>, uv: vec2f, scale: vec2f, offset: vec2f, valid: u32, color: vec3f) -> vec4f {
@@ -1567,7 +1569,8 @@ struct Params {
   originPts: array<vec4f, 8>,
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
-  driftAngle: f32, driftAmount: f32, _da0: f32, _da1: f32,
+  driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
+  gdCloud: f32, gdPulse: f32, _gd0: f32, _gd1: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -1800,7 +1803,8 @@ struct Params {
   originPts: array<vec4f, 8>,
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
-  driftAngle: f32, driftAmount: f32, _da0: f32, _da1: f32,
+  driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
+  gdCloud: f32, gdPulse: f32, _gd0: f32, _gd1: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var texA: texture_2d<f32>;
@@ -1916,7 +1920,7 @@ function makeDisplayBindGroup(finalState) {
 //   5  seed         13  scaleB.y                                          29 bloomCount     37 saltContrast
 //   6  validA       14  offsetB.x                                         30 bloomRim       38 saltBias
 //   7  validB       15  offsetB.y                                         31 bloomRate      39 saltImage
-const UBO_SIZE = 880;  // + aurora (211-215) + drift dir/amount (216-217)
+const UBO_SIZE = 896;  // + drift (216-217) + godray settings (218-221)
 const uniformBuffer = device.createBuffer({
   size: UBO_SIZE,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -2347,6 +2351,7 @@ const state = {
   animate: 0.0,      // evolve each mode's own pattern over the loop (per-mode movement)
   auroraDensity: 0.5, auroraHeight: 0.5, auroraSpeed: 0.4, auroraDark: 0.3, auroraWave: 0.5,  // aurora settings
   driftAngle: 0.25, driftAmount: 0.3,  // wind direction + strength for ambient drift
+  gdIntensity: 0.5, gdBeams: 0.5, gdCloud: 0.5, gdPulse: 0.4,  // godray settings
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2755,6 +2760,10 @@ function writeUniforms() {
   uboF32[215] = state.auroraWave;
   uboF32[216] = state.driftAngle;
   uboF32[217] = state.driftAmount;
+  uboF32[218] = state.gdIntensity;
+  uboF32[219] = state.gdBeams;
+  uboF32[220] = state.gdCloud;
+  uboF32[221] = state.gdPulse;
   // -- 80..95 -- new painterly modes (16..21) + global paper grain
   uboF32[80] = state.strokeScale;
   uboF32[81] = state.strokeAniso;
@@ -3862,8 +3871,15 @@ fAurora.addBinding(state, 'auroraSpeed',   { min: 0, max: 1, step: 0.01, label: 
 fAurora.addBinding(state, 'auroraWave',    { min: 0, max: 1, step: 0.01, label: 'wave through' });
 fAurora.addBinding(state, 'auroraDark',    { min: 0, max: 1, step: 0.01, label: 'darkness' });
 
+const fGodray = fWater.addFolder({ title: 'Godrays', expanded: true });
+fGodray.addBinding(state, 'gdIntensity', { min: 0, max: 1, step: 0.01, label: 'intensity' });
+fGodray.addBinding(state, 'gdBeams',     { min: 0, max: 1, step: 0.01, label: 'beam count / thinness' });
+fGodray.addBinding(state, 'gdCloud',     { min: 0, max: 1, step: 0.01, label: 'break through cloud' });
+fGodray.addBinding(state, 'gdPulse',     { min: 0, max: 1, step: 0.01, label: 'pulse (in & out)' });
+
 function updateModeFolders() {
   fAurora.hidden = state.mode !== 38;
+  fGodray.hidden = state.mode !== 39;
   fRim.hidden    = state.mode !== 1;
   fPaper.hidden  = state.mode !== 2;
   fBlooms.hidden = state.mode !== 3;
@@ -5022,7 +5038,7 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 11;
+const SESSION_VERSION = 12;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
@@ -5030,6 +5046,7 @@ const PERSIST_KEYS = [
   'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence', 'flow', 'undulate', 'animate', 'originPoints',
   'pointStagger', 'pointRandom', 'paintBrush',
   'auroraDensity', 'auroraHeight', 'auroraSpeed', 'auroraDark', 'auroraWave', 'driftAngle', 'driftAmount',
+  'gdIntensity', 'gdBeams', 'gdCloud', 'gdPulse',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
   'partEnable', 'partCount', 'partBurst', 'partSpeed', 'partCurl', 'partTrail',
