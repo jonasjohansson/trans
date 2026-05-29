@@ -2313,7 +2313,7 @@ const state = {
   originPoints: [], placePoints: false,  // click-placed emission points
   pointStagger: 0.5, pointRandom: 0.7,   // stagger point start times + randomness
   paintBrush: 0.12,                      // paint-mode brush radius (fraction of width)
-  turbulence: 0.35,  // organic ink-in-water break-up of the reveal front
+  turbulence: 0.12,  // subtle by default so each mode keeps its own character; dial up for ink
   flow: 0.3,         // animate the turbulence over time (churning/rising)
   undulate: 0.0,     // slow large-scale wave/dance of the reveal (aurora-like)
   animate: 0.0,      // evolve each mode's own pattern over the loop (per-mode movement)
@@ -4988,7 +4988,7 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 9;
+const SESSION_VERSION = 10;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
