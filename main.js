@@ -2297,6 +2297,7 @@ const state = {
   turbulence: 0.35,  // organic ink-in-water break-up of the reveal front
   flow: 0.3,         // animate the turbulence over time (churning/rising)
   undulate: 0.0,     // slow large-scale wave/dance of the reveal (aurora-like)
+  animate: 0.0,      // evolve each mode's own pattern over the loop (per-mode movement)
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2508,7 +2509,10 @@ function writeUniforms() {
   uboF32[2]  = state.organic;
   uboF32[3]  = state.edges;
   uboF32[4]  = state.maskScale;
-  uboF32[5]  = state.seed;
+  // "animate": evolve the noise seed/phase over the loop so every mode morphs
+  // in its own characteristic way (fibers shimmer, sediment shifts, blooms
+  // migrate…) — animation relative to each mode, from one global lever.
+  uboF32[5]  = state.seed + (state.animate || 0) * state.t * 8.0;
   // valid encoding: 0=no image (bg), 1=image, 2=solid color, 3=transparent.
   uboU32[6]  = state.slotAFillMode === 'solid' ? 2 : state.slotAFillMode === 'transparent' ? 3 : (state.imgA ? 1 : 0);
   uboU32[7]  = state.slotBFillMode === 'solid' ? 2 : state.slotBFillMode === 'transparent' ? 3 : (state.imgB ? 1 : 0);
@@ -3834,6 +3838,7 @@ fDis.addBinding(state, 'originAmount', { min: 0, max: 1, step: 0.01, label: 'fro
 fDis.addBinding(state, 'turbulence', { min: 0, max: 1, step: 0.01, label: 'turbulence (ink)' });
 fDis.addBinding(state, 'flow', { min: 0, max: 1, step: 0.01, label: 'flow (animate)' });
 fDis.addBinding(state, 'undulate', { min: 0, max: 1, step: 0.01, label: 'undulate (dance)' });
+fDis.addBinding(state, 'animate', { min: 0, max: 1, step: 0.01, label: 'animate (per-mode)' });
 fDis.addBinding(state, 'spread',    { min: 0, max: 1, step: 0.01, label: 'edge softness' });
 // — start points: click on the canvas to set where the reveal emanates from —
 const btnPlace = fDis.addButton({ title: '✛ Place start points' });
@@ -4944,12 +4949,12 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 6;
+const SESSION_VERSION = 7;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
   'customSize', 'outW', 'outH', 'texAmount', 'texBg', 'texFit',
-  'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence', 'flow', 'undulate', 'originPoints',
+  'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence', 'flow', 'undulate', 'animate', 'originPoints',
   'pointStagger', 'pointRandom', 'paintBrush',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
