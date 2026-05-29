@@ -239,6 +239,19 @@ fn ambRipples(uv: vec2f) -> f32 {
   }
   return clamp(pow(clamp(v / 3.0, 0.0, 1.0), 2.0), 0.0, 1.0);   // caustic sharpen
 }
+fn ambAurora(uv: vec2f) -> f32 {
+  let ph = p.t * 6.2831853;
+  let x = uv.x * p.canvasAspect;                 // aspect-consistent horizontal
+  let drift = ph * 0.06;
+  let curtains = fbm(vec2f(x * 1.5 + drift, ph * 0.12 + 2.0));  // lit clusters drifting
+  let waver = fbm(vec2f(x * 5.0 + drift, ph * 0.2)) * 4.0;
+  let rays = 0.4 + 0.6 * pow(0.5 + 0.5 * sin(x * 20.0 + waver), 2.0);  // vertical ray striations
+  let edge = 0.35 + 0.28 * fbm(vec2f(x * 2.0 + drift, 5.0));     // wavy lower edge of curtain
+  let curtain = smoothstep(edge + 0.5, edge - 0.05, uv.y) * smoothstep(0.0, 0.18, uv.y);
+  var v = curtains * rays * curtain;
+  v = v * (0.65 + 0.35 * sin(ph * 1.4 + x * 3.0));               // slow intensity flicker
+  return clamp(v * 2.1, 0.0, 1.0);
+}
 fn ambGlare(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853;
   let sun = vec2f(0.62 + 0.04 * sin(ph * 0.5), 0.4 + 0.03 * cos(ph * 0.4));
@@ -1393,6 +1406,7 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
   else if (p.mode == 34u) { effMixT = ambRipples(uv); }
   else if (p.mode == 35u) { effMixT = ambGlare(uv); }
   else if (p.mode == 36u) { effMixT = ambStreaks(uv); }
+  else if (p.mode == 38u) { effMixT = ambAurora(uv); }
   // Per-slot alpha comes straight from sampleFit: a PNG's own alpha channel for
   // image slots (valid==1u), 0 for 'transparent' fill mode (valid==3u), and 1 for
   // bg/solid (valid 0u/2u). Final alpha mixes the same way as RGB; output is
@@ -3539,6 +3553,7 @@ const MODE_OPTIONS = {
   'Ambient — sun glare (looping)':        35,
   'Ambient — light streaks (looping)':    36,
   'Paint — paint the movement':           37,
+  'Ambient — aurora / borealis (looping)':38,
 };
 const MODE_NAMES_FULL = Object.fromEntries(Object.entries(MODE_OPTIONS).map(([n, id]) => [id, n]));
 fWater.addBinding(state, 'mode', {
