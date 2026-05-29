@@ -112,6 +112,7 @@ struct Params {
   originPts: array<vec4f, 8>,
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
+  driftAngle: f32, driftAmount: f32, _da0: f32, _da1: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -202,12 +203,14 @@ fn luma(c: vec3f) -> f32 { return dot(c, vec3f(0.299, 0.587, 0.114)); }
 fn ambBokeh(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853;
   var auv = uv; auv.x = auv.x * p.canvasAspect;
-  var v = fbm(uv * 2.2 + vec2f(ph * 0.05, -ph * 0.04)) * 0.3;  // defocused light field
+  let dd = p.driftAmount * vec2f(cos(p.driftAngle * 6.2831853), sin(p.driftAngle * 6.2831853));
+  var v = fbm(uv * 2.2 + dd * ph * 0.2 + vec2f(0.0, -ph * 0.02)) * 0.3;  // defocused light field
   for (var i = 0u; i < 22u; i = i + 1u) {
     let fi = f32(i) + 1.0;
     let sp = 0.4 + 1.2 * hash21(vec2f(fi, 2.2));
     let wob = 0.06 * vec2f(sin(ph * sp + fi), cos(ph * sp * 0.9 + fi * 1.7));
-    var c = vec2f(hash21(vec2f(fi, 3.7)), hash21(vec2f(fi, 9.1))) + wob;
+    // net drift in the chosen direction, wrapped so dots re-enter (wind)
+    var c = fract(vec2f(hash21(vec2f(fi, 3.7)), hash21(vec2f(fi, 9.1))) + wob + dd * ph * 0.35);
     c.x = c.x * p.canvasAspect;
     let d = length(auv - c);
     let r = mix(0.03, 0.22, hash21(vec2f(fi, 5.5)));        // size / focus variation
@@ -221,7 +224,8 @@ fn ambBokeh(uv: vec2f) -> f32 {
 }
 fn ambStreaks(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853;
-  let sc = vec2f(uv.x * 6.0 + ph * 0.16, uv.y * 1.0);          // continuous one-way drift
+  let dd = p.driftAmount * vec2f(cos(p.driftAngle * 6.2831853), sin(p.driftAngle * 6.2831853));
+  let sc = vec2f(uv.x * 6.0 + ph * 0.16, uv.y * 1.0) + dd * ph * 3.0;  // drift in chosen direction
   var s = fbm(sc) + 0.55 * fbm(sc * vec2f(2.2, 1.0) + vec2f(ph * 0.1, 0.0));
   s = pow(clamp((s - 0.45) * 1.9, 0.0, 1.0), 1.5);             // sharpen into streaks
   let smear = (fbm(sc + vec2f(0.0, 0.05)) + fbm(sc - vec2f(0.0, 0.05))) * 0.12;
@@ -280,6 +284,19 @@ fn ambGlare(uv: vec2f) -> f32 {
   let halo = exp(-d * 1.3) * (0.4 + 0.6 * rays);
   let foliage = smoothstep(0.3, 0.72, fbm(uv * 5.0 + vec2f(ph * 0.1, -ph * 0.15)));
   return clamp((core + halo) * mix(0.45, 1.0, foliage), 0.0, 1.0);
+}
+fn ambGodrays(uv: vec2f) -> f32 {
+  // light shafts fanning down from a high sun, broken by drifting cloud gaps
+  let ph = p.t * 6.2831853;
+  let sun = vec2f(0.5 + (p.driftAngle - 0.5) * 0.9, -0.12);   // steer the sun sideways
+  var d = uv - sun; d.x = d.x * p.canvasAspect;
+  let ang = atan2(d.x, d.y);                  // 0 = straight down from the sun
+  let dist = length(d);
+  let drift = ph * (0.04 + p.driftAmount * 0.12);
+  let beams = pow(0.5 + 0.5 * sin(ang * 20.0 + fbm(vec2f(ang * 7.0 + drift, ph * 0.08)) * 5.0), 1.7);
+  let gaps  = smoothstep(0.32, 0.8, fbm(vec2f(ang * 4.0 + drift, dist * 2.2 + 1.0)));
+  let fade  = exp(-dist * 1.05);              // brighter near the sun, fading down
+  return clamp((beams * gaps + 0.12) * fade * 2.3, 0.0, 1.0);
 }
 
 fn sampleFit(tex: texture_2d<f32>, uv: vec2f, scale: vec2f, offset: vec2f, valid: u32, color: vec3f) -> vec4f {
@@ -1424,6 +1441,7 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
   else if (p.mode == 35u) { effMixT = ambGlare(uv); }
   else if (p.mode == 36u) { effMixT = ambStreaks(uv); }
   else if (p.mode == 38u) { effMixT = ambAurora(uv); }
+  else if (p.mode == 39u) { effMixT = ambGodrays(uv); }
   // Per-slot alpha comes straight from sampleFit: a PNG's own alpha channel for
   // image slots (valid==1u), 0 for 'transparent' fill mode (valid==3u), and 1 for
   // bg/solid (valid 0u/2u). Final alpha mixes the same way as RGB; output is
@@ -1541,6 +1559,7 @@ struct Params {
   originPts: array<vec4f, 8>,
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
+  driftAngle: f32, driftAmount: f32, _da0: f32, _da1: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -1773,6 +1792,7 @@ struct Params {
   originPts: array<vec4f, 8>,
   originCount: u32, flow: f32, undulate: f32, auroraDensity: f32,
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
+  driftAngle: f32, driftAmount: f32, _da0: f32, _da1: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var texA: texture_2d<f32>;
@@ -1888,7 +1908,7 @@ function makeDisplayBindGroup(finalState) {
 //   5  seed         13  scaleB.y                                          29 bloomCount     37 saltContrast
 //   6  validA       14  offsetB.x                                         30 bloomRim       38 saltBias
 //   7  validB       15  offsetB.y                                         31 bloomRate      39 saltImage
-const UBO_SIZE = 864;  // + aurora settings (auroraDensity 211, height 212, speed 213)
+const UBO_SIZE = 880;  // + aurora (211-215) + drift dir/amount (216-217)
 const uniformBuffer = device.createBuffer({
   size: UBO_SIZE,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -2318,6 +2338,7 @@ const state = {
   undulate: 0.0,     // slow large-scale wave/dance of the reveal (aurora-like)
   animate: 0.0,      // evolve each mode's own pattern over the loop (per-mode movement)
   auroraDensity: 0.5, auroraHeight: 0.5, auroraSpeed: 0.4, auroraDark: 0.3, auroraWave: 0.5,  // aurora settings
+  driftAngle: 0.25, driftAmount: 0.3,  // wind direction + strength for ambient drift
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2724,6 +2745,8 @@ function writeUniforms() {
   uboF32[213] = state.auroraSpeed;
   uboF32[214] = state.auroraDark;
   uboF32[215] = state.auroraWave;
+  uboF32[216] = state.driftAngle;
+  uboF32[217] = state.driftAmount;
   // -- 80..95 -- new painterly modes (16..21) + global paper grain
   uboF32[80] = state.strokeScale;
   uboF32[81] = state.strokeAniso;
@@ -3583,6 +3606,7 @@ const MODE_OPTIONS = {
   'Ambient — light streaks (looping)':    36,
   'Paint — paint the movement':           37,
   'Ambient — aurora / borealis (looping)':38,
+  'Ambient — godrays through clouds (looping)':39,
 };
 const MODE_NAMES_FULL = Object.fromEntries(Object.entries(MODE_OPTIONS).map(([n, id]) => [id, n]));
 fWater.addBinding(state, 'mode', {
@@ -3876,6 +3900,8 @@ fMove.addBinding(state, 'turbulence', { min: 0, max: 1, step: 0.01, label: 'turb
 fMove.addBinding(state, 'flow', { min: 0, max: 1, step: 0.01, label: 'flow' });
 fMove.addBinding(state, 'undulate', { min: 0, max: 1, step: 0.01, label: 'undulate (dance)' });
 fMove.addBinding(state, 'animate', { min: 0, max: 1, step: 0.01, label: 'animate (per-mode)' });
+fMove.addBinding(state, 'driftAngle', { min: 0, max: 1, step: 0.01, label: 'drift direction (ambient)' });
+fMove.addBinding(state, 'driftAmount', { min: 0, max: 1, step: 0.01, label: 'drift amount (ambient)' });
 
 // — start points & paint (collapsed) — where the reveal emanates from —
 const fPts = fDis.addFolder({ title: 'Start points / paint', expanded: false });
@@ -4988,14 +5014,14 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 10;
+const SESSION_VERSION = 11;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
   'customSize', 'outW', 'outH', 'texAmount', 'texBg', 'texFit',
   'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence', 'flow', 'undulate', 'animate', 'originPoints',
   'pointStagger', 'pointRandom', 'paintBrush',
-  'auroraDensity', 'auroraHeight', 'auroraSpeed', 'auroraDark', 'auroraWave',
+  'auroraDensity', 'auroraHeight', 'auroraSpeed', 'auroraDark', 'auroraWave', 'driftAngle', 'driftAmount',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
   'partEnable', 'partCount', 'partBurst', 'partSpeed', 'partCurl', 'partTrail',
