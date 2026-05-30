@@ -28,7 +28,7 @@
     ambCount:['count / density',0,1,.01], ambSize:['size / scale',0,1,.01], ambSoft:['softness',0,1,.01],
     ambSpeed:['speed',0,1,.01], ambDetail:['detail / fidelity',0,1,.01],
     // vignette
-    vignAmount:['amount',0,1,.01], vignFeather:['feather',0,1,.01], vignAnimate:['animate (pulse)',0,1,.01], vignTexture:['edge texture',0,1,.01],
+    vignAmount:['amount',0,1,.01], vignFeather:['feather',0,1,.01], vignAnimate:['animate (pulse)',0,1,.01], vignTexture:['edge texture',0,1,.01], vignShape:['shape (ellipse↔rect)',0,1,.01],
     // mode-specific
     rimWidth:['rim width',0,.4,.005], rimDark:['rim dark',0,1,.01],
     paperAngle:['fiber angle',0,1,.005], paperAniso:['anisotropy',1,10,.1], paperGranulation:['granulation',0,1,.01],
@@ -344,7 +344,7 @@
         paramsEl.appendChild(sec);
       }
       paramsEl.appendChild(section('Advanced',['originX','originY','maskScale','curve','seed','maskShift','organic','edges'],!REL.advanced(m)));
-      paramsEl.appendChild(section('Vignette (global)',['vignAmount','vignFeather','vignTexture','vignAnimate'],false));
+      paramsEl.appendChild(section('Vignette (global)',['vignAmount','vignShape','vignFeather','vignTexture','vignAnimate'],false));
     }
     function selectMode(id){
       left.querySelectorAll('.chip').forEach(c=>c.classList.toggle('sel',+c.dataset.mode===id));
