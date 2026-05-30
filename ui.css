@@ -135,3 +135,9 @@ select:focus,input:focus{ border-color:var(--ui-accent); }
 /* use-sources toggle in the sources popover */
 .use-src{ display:flex; align-items:center; gap:6px; margin:2px 0 8px; cursor:pointer; font-size:11px; color:var(--ui-text); }
 .use-src input{ accent-color:var(--ui-accent); }
+
+/* archived (deprecated, photo-edge) modes — kept but de-emphasised */
+.mgroup-archive{opacity:.5}
+.mgroup-archive:hover{opacity:1}
+.mgroup-archive h4{color:#6a6a6a}
+.mgroup-archive h4::after{content:" (deprecated)";opacity:.7;font-size:8px}

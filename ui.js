@@ -75,13 +75,14 @@
 
   // modes grouped for the grid
   const MODES = [
-    ['Reveal',[[0,'smooth'],[1,'pigment rim'],[7,'iris'],[15,'wet edge'],[18,'edge underdraw']]],
-    ['Watercolor',[[2,'paper grain'],[3,'backrun blooms'],[4,'wet diffusion'],[5,'tonal sediment'],[6,'salt'],[8,'wet bleed'],[9,'pigment run'],[17,'tonal wash'],[24,'cauliflower'],[25,'wet-stage'],[26,'migration'],[23,'formation']]],
-    ['Advection',[[10,'adv wet'],[11,'adv gravity'],[12,'adv curl'],[13,'adv brush'],[14,'adv seed'],[21,'density grav']]],
-    ['Painterly',[[16,'stroke-follow'],[19,'painterly flow'],[20,'color dabs'],[22,'mold tendrils']]],
+    ['Reveal',[[0,'smooth'],[1,'pigment rim'],[7,'iris'],[15,'wet edge']]],
+    ['Watercolor',[[2,'paper grain'],[3,'backrun blooms'],[4,'wet diffusion'],[5,'tonal sediment'],[6,'salt'],[8,'wet bleed'],[9,'pigment run'],[24,'cauliflower'],[25,'wet-stage'],[26,'migration'],[23,'formation']]],
+    ['Advection',[[10,'adv wet'],[11,'adv gravity'],[12,'adv curl'],[13,'adv brush'],[14,'adv seed']]],
+    ['Painterly',[[22,'mold tendrils']]],
     ['Light & burn',[[27,'paper scorch'],[30,'light bloom']]],
     ['Ambient (loop)',[[33,'bokeh'],[34,'water ripples'],[35,'sun glare'],[36,'light streaks'],[38,'aurora'],[39,'godrays'],[40,'clouds'],[41,'caustics'],[42,'embers'],[43,'mist'],[44,'rain'],[45,'snow'],[46,'marble'],[47,'ink blooms']]],
     ['Special',[[28,'video mask'],[32,'texture-source'],[31,'particles'],[37,'paint']]],
+    ['Archive',[[16,'stroke-follow'],[17,'tonal wash'],[18,'edge underdraw'],[19,'painterly flow'],[20,'color dabs'],[21,'density grav']]],
   ];
   const MODE_NAME = {}; MODES.forEach(g=>g[1].forEach(([id,n])=>MODE_NAME[id]=n));
 
@@ -139,7 +140,7 @@
       zoom.style.left=(r.right+8)+'px'; zoom.classList.add('on'); }
     function hideZoom(){ zoom.classList.remove('on'); }
     MODES.forEach(([gname,items])=>{
-      const g=document.createElement('div'); g.className='mgroup'; g.innerHTML=`<h4>${gname}</h4>`;
+      const g=document.createElement('div'); g.className='mgroup'+(gname==='Archive'?' mgroup-archive':''); g.innerHTML=`<h4>${gname}</h4>`;
       items.forEach(([id,name])=>{
         const c=document.createElement('button'); c.className='chip'; c.dataset.mode=id;
         const url=`thumbs/m${String(id).padStart(2,'0')}.png`;
