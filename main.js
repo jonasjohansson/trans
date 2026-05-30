@@ -5501,6 +5501,8 @@ window.__engine = {
     if (m >= 10 && m <= 14) advec.needsReset = true;
     restartPlayback(); saveSession();
   },
+  setMatte(on) { state.matteOutput = !!on; if (typeof pane!=='undefined') try{pane.refresh();}catch(e){} saveSession(); },
+  get matteOutput() { return state.matteOutput; },
   randomizeMode(m) {
     // reset to defaults then jitter each numeric amb/mode key a little — folder-free
     this.resetMode(m);

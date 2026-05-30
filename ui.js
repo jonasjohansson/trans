@@ -175,6 +175,7 @@
       <div class="sep"></div>
       <div class="grp"><label>display</label><select id="ui-disp"></select></div>
       <div class="grp"><label>invert</label><input type="checkbox" id="ui-inv"></div>
+      <div class="grp"><button class="btn" id="ui-preview" title="show B/W matte or the colour result on A/B">preview: matte</button></div>
       <button class="btn ghost" id="t-right" title="settings" style="margin-left:auto">◨</button>`;
     document.body.appendChild(bar);
 
@@ -267,6 +268,10 @@
     const durIn=bar.querySelector('#ui-dur'); durIn.value=st.duration;
     durIn.onchange=()=>{st.duration=Math.max(.5,Math.min(45,+durIn.value));E.save();};
     const inv=bar.querySelector('#ui-inv'); inv.checked=!!st.matteInvert; inv.onchange=()=>{st.matteInvert=inv.checked;};
+    const prev=bar.querySelector('#ui-preview');
+    const syncPrev=()=>{ const on=E.matteOutput!==false; prev.textContent='preview: '+(on?'matte':'colour'); prev.classList.toggle('on',!on); };
+    prev.onclick=()=>{ E.setMatte(E.matteOutput===false); syncPrev(); };
+    syncPrev();
 
     // ── transport ──
     const bPlay=bar.querySelector('#ui-play'), bLoop=bar.querySelector('#ui-loop');
