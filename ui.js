@@ -165,7 +165,7 @@
       <div class="grp"><label>output</label><select id="ui-size"></select></div>
       <div class="grp" id="ui-wh" style="display:none"><input type="number" id="ui-w"><span style="color:var(--ui-mut)">×</span><input type="number" id="ui-h"></div>
       <div class="sep"></div>
-      <div class="grp"><label>dur</label><input type="number" id="ui-dur" min="0.5" max="45" step="0.5" style="width:52px"><span style="color:var(--ui-mut)">s</span></div>
+      <div class="grp"><label>dur</label><input type="number" id="ui-dur" min="1" max="60" step="1" style="width:52px"><span style="color:var(--ui-mut)">s</span></div>
       <div class="sep"></div>
       <div class="grp"><button class="btn" id="ui-play">▶ play</button><button class="btn" id="ui-restart" title="restart from 0">⟳ restart</button><button class="btn" id="ui-loop">loop</button></div>
       <div class="grp" id="scrub-grp"><input type="range" id="ui-scrub" min="0" max="1" step="0.001" value="0" title="scrub the transition (progress)"><span class="val" id="ui-scrub-val">0.00</span></div>
@@ -204,7 +204,8 @@
     // 'use sources' toggle now lives in the bottom bar (next to the sources button)
     ['slot-bar','library-section'].forEach(id=>{ const el=document.getElementById(id); if(el) srcHost.appendChild(el); });
     { const u=bar.querySelector('#ui-usesrc'); if(u){ u.checked=E.useSources; u.onchange=()=>{ E.setUseSources(u.checked); }; } }
-    bar.querySelector('#ui-sources').onclick=()=>{ openPop('sources', bar.querySelector('#ui-sources'), (host)=>{ host.appendChild(srcHost); }); };
+    document.body.appendChild(srcHost);
+    bar.querySelector('#ui-sources').onclick=()=>{ document.body.classList.toggle('no-sources'); };
 
     // PRESETS
     bar.querySelector('#ui-presets').onclick=()=>openPop('presets', bar.querySelector('#ui-presets'), (host)=>{
