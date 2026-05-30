@@ -49,13 +49,6 @@ body.no-right #ui-modes{ display:none; }
 .chip.sel .nm{ background:linear-gradient(transparent, rgba(255,255,255,.92) 55%); color:#000; font-weight:600; }
 
 /* hover-zoom preview */
-#thumbzoom{ position:fixed; z-index:400; display:none; pointer-events:none;
-  border:1px solid var(--ui-accent); border-radius:6px; overflow:hidden;
-  box-shadow:0 8px 30px rgba(0,0,0,.6); background:#000; }
-#thumbzoom.on{ display:block; }
-#thumbzoom img{ display:block; width:320px; height:200px; object-fit:cover; filter:grayscale(1); }
-#thumbzoom .zl{ position:absolute; left:0; right:0; bottom:0; padding:5px 9px; font:12px var(--ui-font);
-  color:#fff; background:linear-gradient(transparent, rgba(0,0,0,.85)); }
 
 /* ── right rail: params ── */
 #ui-right{
@@ -136,9 +129,6 @@ select:focus,input:focus{ border-color:var(--ui-accent); }
 #ui-scrub{ width:140px; accent-color:var(--ui-accent); height:3px; }
 #scrub-grp .val{ width:34px; color:var(--ui-mut); font-size:10px; }
 
-/* use-sources toggle in the sources popover */
-.use-src{ display:flex; align-items:center; gap:6px; margin:2px 0 8px; cursor:pointer; font-size:11px; color:var(--ui-text); }
-.use-src input{ accent-color:var(--ui-accent); }
 
 /* archived (deprecated, photo-edge) modes — kept but de-emphasised */
 .mgroup-archive{opacity:.5}

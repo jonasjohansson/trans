@@ -120,7 +120,6 @@
   };
 
   // relevance of the global groups per mode
-  const isAmb = m => [33,34,35,36,38,39,40,41,42,43,44,45,46,47].includes(m);
   const isTrans = m => m<=32 && m!==31;            // reveal/movement/advanced apply
   const REL = {
     reveal: m=>isTrans(m), movement: m=>isTrans(m), advanced: m=>isTrans(m),
@@ -132,12 +131,6 @@
 
     // ── left rail: mode grid (thumbnail tiles) ──
     const left=document.createElement('div'); left.id='ui-modes';
-    const zoom=document.createElement('div'); zoom.id='thumbzoom'; document.body.appendChild(zoom);
-    function showZoom(url,name,el){ const r=el.getBoundingClientRect();
-      zoom.innerHTML=`<img src="${url}"><div class="zl">${name}</div>`;
-      zoom.style.top=Math.min(window.innerHeight-230, Math.max(8, r.top-30))+'px';
-      zoom.style.left=Math.max(8, r.left-216)+'px'; zoom.classList.add('on'); }
-    function hideZoom(){ zoom.classList.remove('on'); }
     MODES.forEach(([gname,items])=>{
       const g=document.createElement('div'); g.className='mgroup'+(gname==='Archive'?' mgroup-archive':''); g.innerHTML=`<h4>${gname}</h4>`;
       items.forEach(([id,name])=>{
