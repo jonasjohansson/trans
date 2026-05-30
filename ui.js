@@ -167,7 +167,7 @@
       <div class="sep"></div>
       <div class="grp"><label>dur</label><input type="number" id="ui-dur" min="0.5" max="45" step="0.5" style="width:52px"><span style="color:var(--ui-mut)">s</span></div>
       <div class="sep"></div>
-      <div class="grp"><button class="btn" id="ui-play">▶ play</button><button class="btn" id="ui-restart">⟳</button><button class="btn" id="ui-loop">loop</button></div>
+      <div class="grp"><button class="btn" id="ui-play">▶ play</button><button class="btn" id="ui-restart" title="restart from 0">⟳ restart</button><button class="btn" id="ui-loop">loop</button></div>
       <div class="sep"></div>
       <div class="grp"><span id="recwrap"><button class="btn rec" id="ui-rec">● record</button><span id="recbar"></span></span></div>
       <div class="sep"></div>
@@ -317,6 +317,14 @@
     }
     function buildParams(m){
       paramsEl.innerHTML='';
+      {
+        const fb=document.createElement('div'); fb.className='ptsbar'; fb.style.margin='0 0 10px';
+        const rs=document.createElement('button'); rs.className='btn sm'; rs.textContent='↺ reset mode';
+        rs.onclick=()=>{ E.resetMode(m); buildParams(m); };
+        const rnd=document.createElement('button'); rnd.className='btn sm'; rnd.textContent='🎲 randomize';
+        rnd.onclick=()=>{ E.randomizeMode(m); buildParams(m); };
+        fb.appendChild(rs); fb.appendChild(rnd); paramsEl.appendChild(fb);
+      }
       if(MK[m]) paramsEl.appendChild(section('this mode',MK[m],false));
       paramsEl.appendChild(section('Reveal',['originAmount','spread'],!REL.reveal(m)));
       paramsEl.appendChild(section('Movement',['turbulence','flow','undulate','animate'],!REL.movement(m)));
