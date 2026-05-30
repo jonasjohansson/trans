@@ -116,7 +116,7 @@
   const isTrans = m => m<=32 && m!==31;            // reveal/movement/advanced apply
   const REL = {
     reveal: m=>isTrans(m), movement: m=>isTrans(m), advanced: m=>isTrans(m),
-    points: m=>(m<=32&&m!==31)||m===34, dir: m=>[33,35,36,39].includes(m), vign: ()=>true,
+    points: m=>(m<=32&&m!==31)||m===34, dir: m=>[33,35,36,39,40].includes(m), vign: ()=>true,
   };
 
   function init(E){
