@@ -3546,6 +3546,65 @@ btnRecordSetup.on('click', async () => {
   try { await startRecording(); } finally { btnRecordSetup.title = '● Record matte'; }
 });
 
+// ---- output folder (File System Access API, Chromium-only) ----
+const HAS_FS_ACCESS = typeof window.showDirectoryPicker === 'function';
+let outputDirHandle = null;
+const outputFolderProxy = { name: 'browser default' };
+(async () => {
+  const saved = await idbGet('outputDir');
+  if (saved) {
+    outputDirHandle = saved;
+    outputFolderProxy.name = saved.name;
+    try { pane.refresh(); } catch {}
+  }
+})();
+async function getOutputDirHandleWithPermission() {
+  if (!outputDirHandle) return null;
+  try {
+    let perm = await outputDirHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') perm = await outputDirHandle.requestPermission({ mode: 'readwrite' });
+    return perm === 'granted' ? outputDirHandle : null;
+  } catch { return null; }
+}
+async function saveBlobToOutputFolder(blob, filename) {
+  const dir = await getOutputDirHandleWithPermission();
+  if (!dir) return false;
+  try {
+    const fileHandle = await dir.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+  } catch (e) {
+    console.error('[output folder save]', e);
+    return false;
+  }
+}
+fPlay.addBinding(outputFolderProxy, 'name', { readonly: true, label: 'output folder' });
+fPlay.addBlade({
+  view: 'buttongrid',
+  size: [2, 1],
+  cells: (x) => ({ title: HAS_FS_ACCESS ? ['📁 Pick folder', 'Use default'][x] : ['(not supported in this browser)', ''][x] }),
+  label: '',
+}).on('click', async e => {
+  if (!HAS_FS_ACCESS) return;
+  if (e.index[0] === 0) {
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      outputDirHandle = handle;
+      outputFolderProxy.name = handle.name;
+      await idbPut('outputDir', handle);
+      pane.refresh();
+    } catch (err) { if (err.name !== 'AbortError') alert('Folder pick failed: ' + err.message); }
+  } else {
+    outputDirHandle = null;
+    outputFolderProxy.name = 'browser default';
+    await idbPut('outputDir', null);
+    pane.refresh();
+  }
+});
+
+
 // ---- top-level tabs (Setup stays above; everything else goes in a tab) ----
 const tabs = pane.addTab({
   pages: [
@@ -4202,63 +4261,6 @@ bPadPreset.on('change', e => {
 });
 const bPad = fExp.addBinding(state, 'exportPadBottom', { min: 0, max: 3, step: 0.001, label: 'pad below (× h)' });
 
-// ---- output folder (File System Access API, Chromium-only) ----
-const HAS_FS_ACCESS = typeof window.showDirectoryPicker === 'function';
-let outputDirHandle = null;
-const outputFolderProxy = { name: 'browser default' };
-(async () => {
-  const saved = await idbGet('outputDir');
-  if (saved) {
-    outputDirHandle = saved;
-    outputFolderProxy.name = saved.name;
-    try { pane.refresh(); } catch {}
-  }
-})();
-async function getOutputDirHandleWithPermission() {
-  if (!outputDirHandle) return null;
-  try {
-    let perm = await outputDirHandle.queryPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') perm = await outputDirHandle.requestPermission({ mode: 'readwrite' });
-    return perm === 'granted' ? outputDirHandle : null;
-  } catch { return null; }
-}
-async function saveBlobToOutputFolder(blob, filename) {
-  const dir = await getOutputDirHandleWithPermission();
-  if (!dir) return false;
-  try {
-    const fileHandle = await dir.getFileHandle(filename, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    return true;
-  } catch (e) {
-    console.error('[output folder save]', e);
-    return false;
-  }
-}
-fExp.addBinding(outputFolderProxy, 'name', { readonly: true, label: 'output folder' });
-fExp.addBlade({
-  view: 'buttongrid',
-  size: [2, 1],
-  cells: (x) => ({ title: HAS_FS_ACCESS ? ['📁 Pick folder', 'Use default'][x] : ['(not supported in this browser)', ''][x] }),
-  label: '',
-}).on('click', async e => {
-  if (!HAS_FS_ACCESS) return;
-  if (e.index[0] === 0) {
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      outputDirHandle = handle;
-      outputFolderProxy.name = handle.name;
-      await idbPut('outputDir', handle);
-      pane.refresh();
-    } catch (err) { if (err.name !== 'AbortError') alert('Folder pick failed: ' + err.message); }
-  } else {
-    outputDirHandle = null;
-    outputFolderProxy.name = 'browser default';
-    await idbPut('outputDir', null);
-    pane.refresh();
-  }
-});
 // Slider → preset: keep the dropdown showing the matching preset (or 'none')
 // when the slider lands on a value we have a preset for.
 bPad.on('change', () => {
