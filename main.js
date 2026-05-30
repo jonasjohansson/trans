@@ -1691,7 +1691,10 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
       effMixT = m;
       outc = mix(cA.rgb, cB.rgb, m);
     } else {
+      // standalone: the ambient field IS the matte — it doesn't transition the
+      // images, so show the clean grayscale field (no base-mask image edges).
       effMixT = ambF;
+      outc = vec3f(ambF);
     }
   }
   // Per-slot alpha comes straight from sampleFit: a PNG's own alpha channel for
@@ -3502,6 +3505,7 @@ function loadFromUrl(url, slot) {
 }
 function updateSlotPreview(slot, url) {
   const el = document.querySelector(`.slot[data-slot="${slot}"]`);
+  if (!el) return;   // slot DOM may be relocated/absent in the custom UI — skip the thumbnail
   el.querySelector('.placeholder')?.remove();
   let im = el.querySelector('img');
   if (!im) { im = document.createElement('img'); el.appendChild(im); }
