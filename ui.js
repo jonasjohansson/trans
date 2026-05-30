@@ -168,6 +168,7 @@
       <div class="grp"><label>dur</label><input type="number" id="ui-dur" min="0.5" max="45" step="0.5" style="width:52px"><span style="color:var(--ui-mut)">s</span></div>
       <div class="sep"></div>
       <div class="grp"><button class="btn" id="ui-play">▶ play</button><button class="btn" id="ui-restart" title="restart from 0">⟳ restart</button><button class="btn" id="ui-loop">loop</button></div>
+      <div class="grp" id="scrub-grp"><input type="range" id="ui-scrub" min="0" max="1" step="0.001" value="0" title="scrub the transition (progress)"><span class="val" id="ui-scrub-val">0.00</span></div>
       <div class="sep"></div>
       <div class="grp"><span id="recwrap"><button class="btn rec" id="ui-rec">● record</button><span id="recbar"></span></span></div>
       <div class="sep"></div>
@@ -278,7 +279,12 @@
     bPlay.onclick=()=>{E.togglePlay();refreshTransport();};
     bar.querySelector('#ui-restart').onclick=()=>{E.restartPlayback();refreshTransport();};
     bLoop.onclick=()=>{E.toggleLoop();refreshTransport();};
-    function refreshTransport(){ bPlay.textContent=E.playing?'❚❚ pause':'▶ play'; bPlay.classList.toggle('on',E.playing); bLoop.classList.toggle('on',E.loop); }
+    const scrub=bar.querySelector('#ui-scrub'), scrubVal=bar.querySelector('#ui-scrub-val');
+    let scrubbing=false;
+    scrub.addEventListener('input',()=>{ scrubbing=true; E.scrub(+scrub.value); scrubVal.textContent=(+scrub.value).toFixed(2); });
+    scrub.addEventListener('change',()=>{ scrubbing=false; });
+    function refreshTransport(){ bPlay.textContent=E.playing?'❚❚ pause':'▶ play'; bPlay.classList.toggle('on',E.playing); bLoop.classList.toggle('on',E.loop);
+      if(!scrubbing){ const t=E.state.t||0; scrub.value=t; scrubVal.textContent=t.toFixed(2); } }
     setInterval(refreshTransport,300); refreshTransport();
 
     // ── record + progress ──

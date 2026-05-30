@@ -127,3 +127,7 @@ select:focus,input:focus{ border-color:var(--ui-accent); }
 #ui-pop select,#ui-pop input[type=text]{ background:#000; color:var(--ui-text); border:1px solid var(--ui-line); border-radius:4px; padding:5px 7px; font:inherit; font-size:11.5px; }
 /* the relocated source slots/library inherit their own CSS from style.css */
 #ui-pop #slot-bar,#ui-pop #library-section{ position:static; width:auto; }
+
+/* progress scrubber in the bottom bar */
+#ui-scrub{ width:140px; accent-color:var(--ui-accent); height:3px; }
+#scrub-grp .val{ width:34px; color:var(--ui-mut); font-size:10px; }
