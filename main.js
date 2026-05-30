@@ -442,7 +442,7 @@ fn ambEmbers(uv: vec2f) -> f32 {
     let tw = 0.5 + 0.5 * sin(ph * (1.5 + speed * 3.0) + fi * 2.0);
     let core = exp(-d * d / (r * r));
     let glow = exp(-d / (r * 4.0 + 0.002)) * (0.2 + 0.2 * p.ambDetail);
-    v = v + (core + glow) * mix(0.35, 1.0, tw) * efade;
+    v = v + (core * 1.3 + glow * 1.4) * mix(0.45, 1.0, tw) * efade;
   }
   return clamp(v, 0.0, 1.0);
 }
@@ -472,7 +472,7 @@ fn ambRain(uv: vec2f) -> f32 {
   var q = uv; q.x = q.x * p.canvasAspect;
   let slant = (p.driftAngle - 0.5) * 1.4;
   let sx = q.x + q.y * slant;
-  let cols = mix(40.0, 160.0, p.ambCount);
+  let cols = mix(60.0, 200.0, p.ambCount);
   let colf = sx * cols;
   let col = floor(colf);
   let fx = fract(colf);
@@ -481,8 +481,8 @@ fn ambRain(uv: vec2f) -> f32 {
   let yy = fract(q.y * mix(1.0, 3.0, p.ambSize) + ph * speed + seed * 10.0);
   let streak = pow(1.0 - yy, mix(8.0, 28.0, 1.0 - p.ambSoft));
   let lineW = pow(smoothstep(0.5, 0.0, abs(fx - 0.5)), mix(6.0, 26.0, p.ambSize));
-  var v = streak * lineW * (0.5 + 0.5 * seed);
-  v = v + fbm(q * 8.0 + ph * 0.3) * 0.05 * p.ambDetail;
+  var v = streak * lineW * (0.7 + 0.5 * seed);
+  v = v + fbm(q * 8.0 + ph * 0.3) * 0.08 * p.ambDetail;
   return clamp(v, 0.0, 1.0);
 }
 fn ambSnow(uv: vec2f) -> f32 {
@@ -494,7 +494,7 @@ fn ambSnow(uv: vec2f) -> f32 {
   var v = 0.0;
   for (var L = 0; L < 3; L = L + 1) {
     let lf = f32(L);
-    let dens = mix(8.0, 26.0, p.ambCount) * (1.0 + lf * 0.5);
+    let dens = mix(12.0, 34.0, p.ambCount) * (1.0 + lf * 0.5);
     let sz = mix(0.5, 1.4, p.ambSize) * (1.0 - lf * 0.22);
     let sp = (0.05 + 0.04 * lf) * (0.5 + p.ambSpeed);
     let drift = dir * ph * 0.02 * p.driftAmount + vec2f(sin(ph * 0.5 + lf) * 0.02, -ph * sp);
@@ -507,7 +507,7 @@ fn ambSnow(uv: vec2f) -> f32 {
     let r = 0.10 * sz * (0.6 + 0.5 * rnd);
     let flake = smoothstep(r, r * 0.2, d);
     let sway = 0.5 + 0.5 * sin(ph * (1.0 + rnd * 2.0) + cell.x);
-    v = v + flake * mix(0.5, 1.0, sway) * (0.5 + 0.5 / (1.0 + lf));
+    v = v + flake * mix(0.6, 1.0, sway) * (0.7 + 0.5 / (1.0 + lf));
   }
   return clamp(v, 0.0, 1.0);
 }
