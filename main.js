@@ -11,6 +11,8 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { SHADER, SIM_SHADER, INIT_SHADER } from './shader.js';
 import { IDB_NAME, IDB_STORE, IDB_LIB_STORE, idbOpen, idbGet, idbPut, idbClearAll, libList, libAdd, libDelete, makeThumb } from './idb.js';
 import { fitInfo, hexToRgb } from './util.js';
+import { codecMaxDim, pickEncoderConfig } from './recorder.js';
+import { HAS_FS_ACCESS, getOutputDir, setOutputDir, getOutputDirHandleWithPermission, saveBlobToOutputFolder } from './output.js';
 
 const canvas = document.getElementById('canvas');
 
@@ -1642,39 +1644,16 @@ btnRecordSetup.on('click', async () => {
 });
 
 // ---- output folder (File System Access API, Chromium-only) ----
-const HAS_FS_ACCESS = typeof window.showDirectoryPicker === 'function';
-let outputDirHandle = null;
 const outputFolderProxy = { name: 'browser default' };
 (async () => {
   const saved = await idbGet('outputDir');
   if (saved) {
-    outputDirHandle = saved;
+    setOutputDir(saved);
     outputFolderProxy.name = saved.name;
     try { pane.refresh(); } catch {}
   }
 })();
-async function getOutputDirHandleWithPermission() {
-  if (!outputDirHandle) return null;
-  try {
-    let perm = await outputDirHandle.queryPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') perm = await outputDirHandle.requestPermission({ mode: 'readwrite' });
-    return perm === 'granted' ? outputDirHandle : null;
-  } catch { return null; }
-}
-async function saveBlobToOutputFolder(blob, filename) {
-  const dir = await getOutputDirHandleWithPermission();
-  if (!dir) return false;
-  try {
-    const fileHandle = await dir.getFileHandle(filename, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    return true;
-  } catch (e) {
-    console.error('[output folder save]', e);
-    return false;
-  }
-}
+// file output -> ./output.js
 fPlay.addBinding(outputFolderProxy, 'name', { readonly: true, label: 'output folder' });
 fPlay.addBlade({
   view: 'buttongrid',
@@ -1686,13 +1665,13 @@ fPlay.addBlade({
   if (e.index[0] === 0) {
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      outputDirHandle = handle;
+      setOutputDir(handle);
       outputFolderProxy.name = handle.name;
       await idbPut('outputDir', handle);
       pane.refresh();
     } catch (err) { if (err.name !== 'AbortError') alert('Folder pick failed: ' + err.message); }
   } else {
-    outputDirHandle = null;
+    setOutputDir(null);
     outputFolderProxy.name = 'browser default';
     await idbPut('outputDir', null);
     pane.refresh();
@@ -2254,31 +2233,7 @@ state.exportPadBottom = 0;  // 0 = no padding; 1 = add full-height black below; 
 
 // Prefer HEVC (H.265) over H.264 — HEVC headroom is ~7680 vs ~3840 for AVC, so
 // wide panoramas survive without aggressive downscaling. Falls back gracefully.
-const RECORDER_MIMES = [
-  'video/mp4;codecs=hvc1.1.6.L120.B0',  // HEVC Main L4 — Chrome 126+ on macOS
-  'video/mp4;codecs=hev1.1.6.L120.B0',
-  'video/mp4;codecs=hvc1',
-  'video/mp4;codecs=hev1',
-  'video/mp4;codecs=avc1.42E01E',        // H.264 fallback
-  'video/mp4;codecs=avc1',
-  'video/mp4',
-  'video/webm;codecs=vp9',
-  'video/webm;codecs=vp8',
-  'video/webm',
-];
-function pickRecorderMime() {
-  for (const m of RECORDER_MIMES) if (MediaRecorder.isTypeSupported(m)) return m;
-  return 'video/webm';
-}
-const mimeToExt = m => m.startsWith('video/mp4') ? 'mp4' : 'webm';
-// Encoder-specific maximum dimension. H.265 hardware encoders handle 8K, H.264
-// usually 4K, VP9 ~8K. We probe with the actual picked mime so the cap matches.
-function encoderMaxDim(mime) {
-  if (/hev|hvc/.test(mime)) return 7680;
-  if (/vp9/.test(mime))     return 7680;
-  if (/avc|h264/.test(mime)) return 3840;
-  return 3840;
-}
+// (dead MediaRecorder helpers removed)
 
 const MODE_NAMES_V2 = {
   0: 'off', 1: 'rim', 2: 'paper', 3: 'blooms', 4: 'diffusion',
@@ -2372,40 +2327,11 @@ bPad.on('change', () => {
 const btnRecord = fExp.addButton({ title: 'Record video' });
 btnRecord.on('click', () => startRecording());
 
-// Try a series of VideoEncoder configs in descending order of profile/level so
-// we pick the highest-headroom one this machine actually supports.
-async function pickEncoderConfig(width, height, framerate, bitrate) {
-  if (typeof VideoEncoder === 'undefined') return null;
-  const candidates = [
-    { codec: 'hev1.1.6.L153.B0', muxer: 'hevc' }, // HEVC Main L5.1 — 8K
-    { codec: 'hev1.1.6.L120.B0', muxer: 'hevc' }, // HEVC Main L4   — 4K
-    { codec: 'avc1.640033',      muxer: 'avc'  }, // H.264 High L5.1
-    { codec: 'avc1.640028',      muxer: 'avc'  }, // H.264 High L4
-    { codec: 'avc1.42E01E',      muxer: 'avc'  }, // H.264 Baseline L3
-  ];
-  for (const c of candidates) {
-    try {
-      const cfg = {
-        codec: c.codec, width, height, framerate, bitrate,
-        hardwareAcceleration: 'prefer-hardware',
-      };
-      const r = await VideoEncoder.isConfigSupported(cfg);
-      if (r && r.supported) return { config: cfg, muxerCodec: c.muxer };
-    } catch {}
-  }
-  return null;
-}
+// pickEncoderConfig -> ./recorder.js
 
 // Maximum dimension a given codec / level can encode. Use these to scale the
 // recording before configuring the encoder.
-function codecMaxDim(codecString) {
-  if (codecString.includes('L153')) return 8192;   // HEVC L5.1
-  if (codecString.includes('L120')) return 4096;   // HEVC L4 or AVC L4
-  if (codecString.includes('L033')) return 8192;   // (informational)
-  if (codecString.includes('640033')) return 8192; // AVC High L5.1
-  if (codecString.includes('640028')) return 4096; // AVC High L4
-  return 3840;
-}
+// codecMaxDim -> ./recorder.js
 
 const recBar = document.createElement('div');
 recBar.id = 'rec-progress';
@@ -2586,7 +2512,7 @@ async function startRecording(opts = {}) {
   const savedToFolder = await saveBlobToOutputFolder(blob, filename);
   let where = '';
   if (savedToFolder) {
-    where = ` → ${outputDirHandle?.name || 'folder'}`;
+    where = ` → ${getOutputDir()?.name || 'folder'}`;
   } else {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3403,12 +3329,12 @@ window.__engine = {
     if (!HAS_FS_ACCESS) return false;
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      outputDirHandle = handle; outputFolderProxy.name = handle.name;
+      setOutputDir(handle); outputFolderProxy.name = handle.name;
       await idbPut('outputDir', handle); try { pane.refresh(); } catch {}
       return handle.name;
     } catch (err) { if (err.name !== 'AbortError') alert('Folder pick failed: ' + err.message); return false; }
   },
-  async clearFolder() { outputDirHandle = null; outputFolderProxy.name = 'browser default'; await idbPut('outputDir', null); try { pane.refresh(); } catch {} },
+  async clearFolder() { setOutputDir(null); outputFolderProxy.name = 'browser default'; await idbPut('outputDir', null); try { pane.refresh(); } catch {} },
   // ── presets ──
   presetOptions() {
     const opts = [];
