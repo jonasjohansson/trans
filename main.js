@@ -261,7 +261,7 @@ fn ambStreaks(uv: vec2f) -> f32 {
   let dAcross = dot(moveV, perp) * 4.0;
   let dAlong  = dot(moveV, dir);
   let sc = vec2f(across * mix(3.5, 11.0, p.ambCount) + dAcross, along * mix(1.4, 0.7, p.ambSize) + dAlong);
-  var s = fbm(sc) + 0.55 * fbm(sc * vec2f(2.2, 1.0) + vec2f(0.0, drift));
+  var s = fbm(sc) + 0.55 * fbm(sc * vec2f(2.2, 1.0) + vec2f(0.0, dAlong));
   s = pow(clamp((s - 0.45) * 1.9, 0.0, 1.0), mix(2.6, 0.9, p.ambSoft));  // sharpen->soften
   let smear = (fbm(sc + vec2f(0.0, 0.05)) + fbm(sc - vec2f(0.0, 0.05))) * 0.12;
   var m = s + smear;
