@@ -164,6 +164,8 @@
       <div class="sep"></div>
       <div class="grp"><span id="recwrap"><button class="btn rec" id="ui-rec">● record</button><span id="recbar"></span></span></div>
       <div class="sep"></div>
+      <div class="grp"><button class="btn" id="ui-sources">sources</button><button class="btn" id="ui-presets">presets</button><button class="btn" id="ui-folder">folder</button></div>
+      <div class="sep"></div>
       <div class="grp"><label>display</label><select id="ui-disp"></select></div>
       <div class="grp"><label>invert</label><input type="checkbox" id="ui-inv"></div>
       <button class="btn ghost" id="t-right" title="settings" style="margin-left:auto">◨</button>`;
@@ -172,6 +174,59 @@
     // rail toggles
     bar.querySelector('#t-left').onclick=()=>document.body.classList.toggle('no-left');
     bar.querySelector('#t-right').onclick=()=>document.body.classList.toggle('no-right');
+
+    // ── popovers (sources / presets / folder) ──
+    const pop=document.createElement('div'); pop.id='ui-pop'; document.body.appendChild(pop);
+    let popOpen=null;
+    function closePop(){ pop.classList.remove('on'); popOpen=null; }
+    function openPop(name, anchorBtn, build){
+      if(popOpen===name){ closePop(); return; }
+      pop.innerHTML=''; build(pop); pop.classList.add('on'); popOpen=name;
+      const r=anchorBtn.getBoundingClientRect();
+      pop.style.left=Math.max(8, Math.min(window.innerWidth-pop.offsetWidth-8, r.left))+'px';
+      pop.style.bottom=(window.innerHeight-r.top+8)+'px';
+    }
+    document.addEventListener('click',(e)=>{ if(popOpen && !pop.contains(e.target) && !e.target.closest('#ui-sources,#ui-presets,#ui-folder')) closePop(); });
+
+    // SOURCES: relocate the live #side DOM (slot bar + library) into a dedicated
+    // host once at init — keeps all of main.js's existing listeners intact.
+    const srcHost=document.createElement('div'); srcHost.id='src-host';
+    srcHost.innerHTML='<div class="pop-title">SOURCE IMAGES</div>';
+    ['slot-bar','library-section'].forEach(id=>{ const el=document.getElementById(id); if(el) srcHost.appendChild(el); });
+    bar.querySelector('#ui-sources').onclick=()=>openPop('sources', bar.querySelector('#ui-sources'), (host)=>{ host.appendChild(srcHost); });
+
+    // PRESETS
+    bar.querySelector('#ui-presets').onclick=()=>openPop('presets', bar.querySelector('#ui-presets'), (host)=>{
+      host.innerHTML='<div class="pop-title">PRESETS</div>';
+      const sel=document.createElement('select'); sel.style.width='100%';
+      const def=document.createElement('option'); def.value=''; def.textContent='— load preset —'; sel.appendChild(def);
+      E.presetOptions().forEach(o=>{const op=document.createElement('option');op.value=o.id;op.textContent=o.label;sel.appendChild(op);});
+      sel.onchange=()=>{ if(sel.value){ E.applyPreset(sel.value); } };
+      host.appendChild(sel);
+      const row=document.createElement('div'); row.className='pop-row';
+      const nm=document.createElement('input'); nm.type='text'; nm.placeholder='name'; nm.style.flex='1';
+      const sv=document.createElement('button'); sv.className='btn sm'; sv.textContent='save';
+      sv.onclick=()=>{ if(E.savePreset(nm.value)){ nm.value=''; bar.querySelector('#ui-presets').click(); bar.querySelector('#ui-presets').click(); } };
+      row.appendChild(nm); row.appendChild(sv); host.appendChild(row);
+      const del=document.createElement('button'); del.className='btn sm'; del.textContent='delete selected (user)';
+      del.style.marginTop='6px'; del.onclick=()=>{ if(E.deletePreset(sel.value)){ bar.querySelector('#ui-presets').click(); bar.querySelector('#ui-presets').click(); } };
+      host.appendChild(del);
+    });
+
+    // OUTPUT FOLDER
+    function refreshFolderBtn(){ const b=bar.querySelector('#ui-folder'); b.textContent='folder: '+(E.folderName||'default'); }
+    bar.querySelector('#ui-folder').onclick=()=>openPop('folder', bar.querySelector('#ui-folder'), (host)=>{
+      host.innerHTML='<div class="pop-title">OUTPUT FOLDER</div>';
+      const cur=document.createElement('div'); cur.className='pop-row'; cur.style.color='var(--ui-mut)'; cur.textContent=E.folderName||'browser default'; host.appendChild(cur);
+      if(!E.hasFolderAPI){ const w=document.createElement('div'); w.className='pop-row'; w.textContent='not supported in this browser'; host.appendChild(w); return; }
+      const row=document.createElement('div'); row.className='pop-row';
+      const pick=document.createElement('button'); pick.className='btn sm'; pick.textContent='📁 pick folder';
+      pick.onclick=async()=>{ const n=await E.pickFolder(); if(n){ cur.textContent=n; refreshFolderBtn(); } };
+      const usd=document.createElement('button'); usd.className='btn sm'; usd.textContent='use default';
+      usd.onclick=async()=>{ await E.clearFolder(); cur.textContent='browser default'; refreshFolderBtn(); };
+      row.appendChild(pick); row.appendChild(usd); host.appendChild(row);
+    });
+    refreshFolderBtn();
     // full-canvas toggle: hide both rails for a big preview (also via Tab)
     const tFull=document.createElement('button'); tFull.className='btn ghost'; tFull.id='t-full'; tFull.textContent='⤢';
     tFull.title='full canvas (Tab)'; bar.insertBefore(tFull, bar.querySelector('#t-right'));

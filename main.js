@@ -5335,5 +5335,40 @@ window.__engine = {
   get playing() { return state.playing; },
   get loop() { return state.loop; },
   get recording() { return typeof recording !== 'undefined' ? recording : false; },
+  // ── sources / texture ──
+  loadFile, clearTexture,
+  loadTexture(file) { if (file) loadTextureFile(file); },
+  // ── output folder ──
+  hasFolderAPI: HAS_FS_ACCESS,
+  get folderName() { return outputFolderProxy.name; },
+  async pickFolder() {
+    if (!HAS_FS_ACCESS) return false;
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      outputDirHandle = handle; outputFolderProxy.name = handle.name;
+      await idbPut('outputDir', handle); try { pane.refresh(); } catch {}
+      return handle.name;
+    } catch (err) { if (err.name !== 'AbortError') alert('Folder pick failed: ' + err.message); return false; }
+  },
+  async clearFolder() { outputDirHandle = null; outputFolderProxy.name = 'browser default'; await idbPut('outputDir', null); try { pane.refresh(); } catch {} },
+  // ── presets ──
+  presetOptions() {
+    const opts = [];
+    for (const k of Object.keys(FACTORY_PRESETS)) opts.push({ id: 'factory:' + k, label: '★ ' + k });
+    const user = loadUserPresets();
+    for (const k of Object.keys(user)) opts.push({ id: 'user:' + k, label: 'user · ' + k });
+    return opts;
+  },
+  applyPreset(id) { applyPreset(id); if (typeof rebuildPresetsFolder === 'function') rebuildPresetsFolder(); },
+  savePreset(name) {
+    name = (name || '').trim(); if (!name) return false;
+    const user = loadUserPresets(); user[name] = snapshotState(); saveUserPresetsToLS(user);
+    if (typeof rebuildPresetsFolder === 'function') rebuildPresetsFolder(); return true;
+  },
+  deletePreset(id) {
+    if (!id || !id.startsWith('user:')) return false;
+    const user = loadUserPresets(); delete user[id.slice(5)]; saveUserPresetsToLS(user);
+    if (typeof rebuildPresetsFolder === 'function') rebuildPresetsFolder(); return true;
+  },
 };
 console.log('[trans] WebGPU ready, format:', presentationFormat);

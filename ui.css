@@ -116,3 +116,14 @@ select:focus,input:focus{ border-color:var(--ui-accent); }
 .ptsbar{ display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; }
 .btn.sm{ padding:5px 8px; font-size:10.5px; }
 .ptsbar .hint{ color:var(--ui-mut); font-size:10px; line-height:1.3; }
+
+/* popovers (sources / presets / folder) anchored above the bottom bar */
+#ui-pop{ position:fixed; z-index:420; display:none; min-width:220px; max-width:420px; max-height:62vh; overflow-y:auto;
+  background:var(--ui-bg); border:1px solid var(--ui-line); border-radius:7px; padding:12px;
+  box-shadow:0 -8px 36px rgba(0,0,0,.6); }
+#ui-pop.on{ display:block; }
+#ui-pop .pop-title{ font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--ui-mut); margin-bottom:8px; font-weight:600; }
+#ui-pop .pop-row{ display:flex; gap:6px; margin-top:6px; align-items:center; }
+#ui-pop select,#ui-pop input[type=text]{ background:#000; color:var(--ui-text); border:1px solid var(--ui-line); border-radius:4px; padding:5px 7px; font:inherit; font-size:11.5px; }
+/* the relocated source slots/library inherit their own CSS from style.css */
+#ui-pop #slot-bar,#ui-pop #library-section{ position:static; width:auto; }
