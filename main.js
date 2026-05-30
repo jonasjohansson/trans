@@ -3448,18 +3448,24 @@ const sizePresets = { _v: '1920x1080' };
 fPlay.addBinding(sizePresets, '_v', {
   label: 'output size',
   options: {
-    // ELVERKET projection surfaces — matte-res (keeps each surface's exact
-    // aspect, stays under the GPU texture clamp; upscale to the real pixel size
-    // in AE / the media server). Full sizes: ALL 12000×6559, Pano 10879×4639,
-    // Floor 8160×2719, Long wall 8160×1920, Short wall 2719×1920.
-    'ELVERKET — ALL · 1.83:1':        '4000x2186',
-    'ELVERKET — Panorama · 2.35:1':   '4000x1706',
-    'ELVERKET — Floor · 3:1':         '4080x1360',
-    'ELVERKET — Long wall · 4.25:1':  '4080x960',
-    'ELVERKET — Short wall · 1.42:1': '2719x1920',
-    '1920×1080 (16:9)': '1920x1080', '1080×1920 (9:16)': '1080x1920',
-    '1080×1080 (1:1)': '1080x1080', '3840×2160 (4K)': '3840x2160',
-    '2560×1440 (16:9)': '2560x1440', '1280×720 (16:9)': '1280x720',
+    // ELVERKET projection surfaces. The .mp4 (HEVC) encoder caps ~8192px wide,
+    // so the three smaller surfaces record at their TRUE full pixel map, while
+    // ALL & Panorama record at the largest that fits and are upscaled to the
+    // real size (shown as →) in AE / the media server. Mattes are soft, so the
+    // upscale is invisible.
+    'ELVERKET ALL · 8000×4373 (→12000×6559)':   '8000x4373',
+    'ELVERKET Panorama · 8000×3411 (→10879×4639)': '8000x3411',
+    'ELVERKET Floor · 8160×2719 (full)':        '8160x2719',
+    'ELVERKET Long wall · 8160×1920 (full)':    '8160x1920',
+    'ELVERKET Short wall · 2719×1920 (full)':   '2719x1920',
+    '8K · 7680×4320':  '7680x4320',
+    '6K · 5760×3240':  '5760x3240',
+    '4K · 3840×2160':  '3840x2160',
+    '1440p · 2560×1440': '2560x1440',
+    '1080p · 1920×1080': '1920x1080',
+    '720p · 1280×720':   '1280x720',
+    'Square · 1080×1080':   '1080x1080',
+    'Vertical · 1080×1920': '1080x1920',
     'custom': 'custom',
   },
 }).on('change', (e) => {
