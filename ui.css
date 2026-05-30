@@ -6,7 +6,7 @@
   --ui-bg:#0d0d0d; --ui-bg2:#161616; --ui-line:rgba(255,255,255,.08);
   --ui-text:#eee; --ui-mut:rgba(238,238,238,.5); --ui-accent:#4a9eff;
   --ui-font:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  --left:158px; --right:266px; --bottom:46px;
+  --left:150px; --right:232px; --bottom:46px;
 }
 
 /* hide the old Tweakpane panel but keep it functional off-screen */
@@ -14,7 +14,7 @@
 #toggle-panel{ display:none !important; }
 
 /* canvas occupies the centre, bounded by the three control zones */
-#stage{ inset:0 var(--right) var(--bottom) var(--left) !important; padding:14px !important; transition:inset .16s ease; }
+#stage{ inset:0 var(--right) var(--bottom) var(--left) !important; padding:8px !important; transition:inset .16s ease; }
 body.no-left  #stage{ left:0 !important; }
 body.no-right #stage{ right:0 !important; }
 
@@ -24,12 +24,11 @@ body.no-right #stage{ right:0 !important; }
   background:var(--ui-bg); border-right:1px solid var(--ui-line);
   overflow-y:auto; padding:10px 8px 16px; font:11px/1.35 var(--ui-font); color:var(--ui-text);
 }
-:root{ --left:178px; }
 body.no-left #ui-left{ display:none; }
 .mgroup{ margin-bottom:11px; }
 .mgroup h4{ color:var(--ui-mut); font-size:9px; text-transform:uppercase; letter-spacing:.09em; margin:0 0 5px 1px; font-weight:600; }
 .chip{
-  position:relative; display:block; width:100%; margin-bottom:4px; height:46px;
+  position:relative; display:block; width:100%; margin-bottom:4px; height:62px;
   border:1px solid var(--ui-line); border-radius:4px; overflow:hidden;
   cursor:pointer; font:inherit; color:var(--ui-text); transition:.1s;
   background:var(--ui-bg2) center/cover no-repeat;
@@ -42,6 +41,15 @@ body.no-left #ui-left{ display:none; }
 }
 .chip.sel{ border-color:var(--ui-accent); box-shadow:0 0 0 1px var(--ui-accent) inset; }
 .chip.sel .nm{ background:linear-gradient(transparent, rgba(74,158,255,.9) 55%); color:#000; font-weight:600; }
+
+/* hover-zoom preview — big enough to read the effect without widening the rail */
+#thumbzoom{ position:fixed; z-index:400; display:none; pointer-events:none;
+  border:1px solid var(--ui-accent); border-radius:6px; overflow:hidden;
+  box-shadow:0 8px 30px rgba(0,0,0,.6); background:#000; }
+#thumbzoom.on{ display:block; }
+#thumbzoom img{ display:block; width:320px; height:200px; object-fit:cover; }
+#thumbzoom .zl{ position:absolute; left:0; right:0; bottom:0; padding:5px 9px; font:12px var(--ui-font);
+  color:#fff; background:linear-gradient(transparent, rgba(0,0,0,.85)); }
 
 /* ── right rail: params ── */
 #ui-right{

@@ -121,12 +121,25 @@
   function init(E){
     const st=E.state;
 
-    // ── left rail: mode grid ──
+    // ── left rail: mode grid (thumbnail tiles) ──
     const left=document.createElement('div'); left.id='ui-left';
+    const zoom=document.createElement('div'); zoom.id='thumbzoom'; document.body.appendChild(zoom);
+    function showZoom(url,name,el){ const r=el.getBoundingClientRect();
+      zoom.innerHTML=`<img src="${url}"><div class="zl">${name}</div>`;
+      zoom.style.top=Math.min(window.innerHeight-230, Math.max(8, r.top-30))+'px';
+      zoom.style.left=(r.right+8)+'px'; zoom.classList.add('on'); }
+    function hideZoom(){ zoom.classList.remove('on'); }
     MODES.forEach(([gname,items])=>{
       const g=document.createElement('div'); g.className='mgroup'; g.innerHTML=`<h4>${gname}</h4>`;
-      items.forEach(([id,name])=>{const c=document.createElement('button');c.className='chip';c.dataset.mode=id;c.textContent=name;
-        c.onclick=()=>{E.setMode(id);selectMode(id);};g.appendChild(c);});
+      items.forEach(([id,name])=>{
+        const c=document.createElement('button'); c.className='chip'; c.dataset.mode=id;
+        const url=`thumbs/m${String(id).padStart(2,'0')}.png`;
+        c.innerHTML=`<span class="nm">${name}</span>`;
+        c.style.backgroundImage=`url(${url})`;
+        c.onclick=()=>{E.setMode(id);selectMode(id);};
+        c.onmouseenter=()=>showZoom(url,name,c); c.onmouseleave=hideZoom;
+        g.appendChild(c);
+      });
       left.appendChild(g);
     });
     document.body.appendChild(left);
@@ -158,6 +171,12 @@
     // rail toggles
     bar.querySelector('#t-left').onclick=()=>document.body.classList.toggle('no-left');
     bar.querySelector('#t-right').onclick=()=>document.body.classList.toggle('no-right');
+    // full-canvas toggle: hide both rails for a big preview (also via Tab)
+    const tFull=document.createElement('button'); tFull.className='btn ghost'; tFull.id='t-full'; tFull.textContent='⤢';
+    tFull.title='full canvas (Tab)'; bar.insertBefore(tFull, bar.querySelector('#t-right'));
+    const toggleFull=()=>{const on=!document.body.classList.contains('no-left'); document.body.classList.toggle('no-left',on); document.body.classList.toggle('no-right',on);};
+    tFull.onclick=toggleFull;
+    window.addEventListener('keydown',e=>{ if(e.key==='Tab' && e.target.tagName!=='INPUT' && e.target.tagName!=='SELECT'){ e.preventDefault(); toggleFull(); }});
 
     // ── output size ──
     const SIZES=[['ELVERKET ALL · 8000×4373',[8000,4373]],['ELVERKET Panorama · 8000×3411',[8000,3411]],
