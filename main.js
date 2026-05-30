@@ -3448,8 +3448,10 @@ async function renderLibrary() {
     _libThumbUrls.set(entry.id, url);
     const tile = document.createElement('div');
     tile.className = 'library-thumb' + (entry.id === idA ? ' in-A' : '') + (entry.id === idB ? ' in-B' : '');
-    tile.title = `${entry.name}\nclick = A · shift-click = B`;
+    tile.title = `${entry.name}\nclick = A · shift-click = B · drag onto a slot`;
     tile.dataset.libId = entry.id;
+    tile.draggable = true;
+    tile.addEventListener('dragstart', (ev) => { ev.dataTransfer.setData('application/x-lib-id', String(entry.id)); ev.dataTransfer.effectAllowed = 'copy'; });
     const img = document.createElement('img');
     img.src = url;
     tile.appendChild(img);
@@ -3564,6 +3566,12 @@ document.querySelectorAll('.slot').forEach(s => {
   s.addEventListener('drop', e => {
     e.preventDefault(); e.stopPropagation();
     s.classList.remove('drop-target');
+    const libId = e.dataTransfer.getData('application/x-lib-id');
+    if (libId) {
+      const item = (_libCache || []).find(it => String(it.id) === libId);
+      if (item) loadFromUrl(URL.createObjectURL(item.blob), s.dataset.slot);
+      return;
+    }
     const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
     if (files.length) loadFile(files[0], s.dataset.slot);
   });
