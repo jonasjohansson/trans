@@ -2405,7 +2405,7 @@ const state = {
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
-  customSize: true, outW: 1920, outH: 1080,
+  customSize: true, outW: 1920, outH: 1080, previewScale: 'full',  // on-screen render scale; recording always full-res
   // output mode — matte-first (B/W luma for AE) by default; bound in Setup,
   // so these must exist before the pane is built.
   matteOutput: true, matteInvert: false,
@@ -2560,34 +2560,44 @@ function composedFit(slot, cw, ch) {
   };
 }
 
-function resizeCanvas() {
-  const minimized = document.body.classList.contains('minimized');
-  const sidePanel = minimized ? 0 : 360;
-  const padding = minimized ? 0 : 32;
-  const maxW = window.innerWidth - sidePanel - padding;
-  const maxH = window.innerHeight - padding;
+// Recording flag — hoisted so resizeCanvas can force full res during capture.
+let recording = false;
+
+// The export format: the full output dimensions the user set, clamped to GPU max.
+function computeOutputDims() {
   let w, h;
-  // Use the custom transition dimensions whenever requested, OR whenever there
-  // is no source image — trans is a matte builder, so image-free it always
-  // renders at the chosen size (never blank).
   if (state.customSize || (!state.imgA && !state.imgB)) {
     w = Math.max(2, Math.round(state.outW));
     h = Math.max(2, Math.round(state.outH));
   } else {
-    // Size to whichever slot is actually rendering an image. When A is solid /
-    // transparent the canvas snaps to B's dimensions so the recorder exports at
-    // B's exact size (and vice versa).
     const aReal = state.slotAFillMode === 'image' && state.imgA;
     const bReal = state.slotBFillMode === 'image' && state.imgB;
     const ref = aReal ? state.imgA : (bReal ? state.imgB : (state.imgA || state.imgB));
     w = ref.naturalWidth; h = ref.naturalHeight;
   }
   const longer = Math.max(w, h);
-  if (longer > GPU_MAX_TEX) {
-    const scale = GPU_MAX_TEX / longer;
-    w = Math.round(w * scale); h = Math.round(h * scale);
-  }
-  canvas.width = w; canvas.height = h;
+  if (longer > GPU_MAX_TEX) { const sc = GPU_MAX_TEX / longer; w = Math.round(w * sc); h = Math.round(h * sc); }
+  return { w, h };
+}
+// On-screen downscale (1 = full). Recording ignores this and renders full-res.
+function previewScaleFactor(w, h) {
+  const ps = state.previewScale;
+  if (!ps || ps === 'full' || ps === '1') return 1;
+  const k = parseFloat(ps);
+  return (k > 0 && k < 1) ? k : 1;
+}
+function resizeCanvas() {
+  const minimized = document.body.classList.contains('minimized');
+  const sidePanel = minimized ? 0 : 360;
+  const padding = minimized ? 0 : 32;
+  const maxW = window.innerWidth - sidePanel - padding;
+  const maxH = window.innerHeight - padding;
+  const { w, h } = computeOutputDims();
+  // Backing store renders at the preview scale (recording forces full res);
+  // CSS still sizes to the full-output fit, so only pixel density drops.
+  const pf = recording ? 1 : previewScaleFactor(w, h);
+  canvas.width = Math.max(2, Math.round(w * pf));
+  canvas.height = Math.max(2, Math.round(h * pf));
   const fit = Math.min(maxW / w, maxH / h, 1);
   canvas.style.width = (w * fit) + 'px';
   canvas.style.height = (h * fit) + 'px';
@@ -4142,7 +4152,6 @@ function makeFilenameV2() {
   return `transition__${parts.join('__')}`;
 }
 
-let recording = false;
 const fExp = tabOutput.addFolder({ title: 'Export', expanded: true });
 // (Output mode + invert moved to the top "Setup" block.)
 fExp.addBinding(state, 'exportFps', {
@@ -4155,6 +4164,10 @@ fExp.addBinding(state, 'exportSizeMode', {
     '2560 wide': '2560', '1920 wide': '1920', '1280 wide': '1280', '960 wide': '960',
   },
 });
+fExp.addBinding(state, 'previewScale', {
+  label: 'preview quality',
+  options: { 'Full (slower at 4k+)': 'full', 'Half': '0.5', 'Quarter': '0.25' },
+}).on('change', () => resizeCanvas());
 // Preset dropdown that writes into state.exportPadBottom on change. Slider
 // stays available for fine-tuning.
 const padPresets = { _v: state.exportPadBottom };
@@ -4283,6 +4296,10 @@ async function startRecording(opts = {}) {
   // Matte-first: record whatever the (always-sized) canvas shows — image-free
   // matte or A->B transition. No image requirement.
 
+  // Record at the full output resolution regardless of the on-screen preview scale.
+  const _od = computeOutputDims();
+  if (canvas.width !== _od.w || canvas.height !== _od.h) { canvas.width = _od.w; canvas.height = _od.h; ensureStateTextures(); }
+
   const fps = state.exportFps;
   const sizeMode = state.exportSizeMode;
   let recW = canvas.width, recH = canvas.height;
@@ -4396,6 +4413,7 @@ async function startRecording(opts = {}) {
   recording = false;
   state.t = prevT;
   state.playing = wasPlaying;
+  resizeCanvas();  // restore the on-screen preview scale after full-res capture
 
   const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
   if (blob.size < 1024) {
@@ -5118,11 +5136,11 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 16;
+const SESSION_VERSION = 17;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
-  'customSize', 'outW', 'outH', 'texAmount', 'texBg', 'texFit',
+  'customSize', 'outW', 'outH', 'previewScale', 'texAmount', 'texBg', 'texFit',
   'originAmount', 'originX', 'originY', 'originFromImage', 'turbulence', 'flow', 'undulate', 'animate', 'originPoints',
   'pointStagger', 'pointRandom', 'paintBrush',
   'auroraDensity', 'auroraHeight', 'auroraSpeed', 'auroraDark', 'auroraWave', 'driftAngle', 'driftAmount',
@@ -5161,5 +5179,5 @@ function loadSession() {
 loadSession();
 pane.on('change', () => saveSession());
 
-window.__tool = { state, pane, device, adapter, uploadTexture, loadTextureFile, clearTexture, loadFromUrl };
+window.__tool = { state, pane, device, adapter, uploadTexture, loadTextureFile, clearTexture, loadFromUrl, computeOutputDims, previewScaleFactor };
 console.log('[trans] WebGPU ready, format:', presentationFormat);
