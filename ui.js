@@ -120,131 +120,122 @@
 
   function init(E){
     const st=E.state;
-    document.body.classList.add('has-customui');
-    const dock=document.createElement('div'); dock.id='dock';
-    dock.innerHTML=`
-      <div id="bar">
-        <div class="grp"><label>output</label><select id="ui-size"></select></div>
-        <div class="grp" id="ui-wh" style="display:none"><input type="number" id="ui-w"><span style="color:var(--ui-mut)">×</span><input type="number" id="ui-h"></div>
-        <div class="sep"></div>
-        <div class="grp"><label>dur</label><input type="number" id="ui-dur" min="0.5" max="45" step="0.5" style="width:54px"><span style="color:var(--ui-mut)">s</span></div>
-        <div class="sep"></div>
-        <div class="grp"><button class="btn" id="ui-play">▶ play</button><button class="btn" id="ui-restart">⟳</button><button class="btn" id="ui-loop">loop</button></div>
-        <div class="sep"></div>
-        <div class="grp"><span id="recwrap"><button class="btn rec" id="ui-rec">● record</button><span id="recbar"></span></span></div>
-        <div class="sep"></div>
-        <div class="grp"><label>display</label><select id="ui-disp"></select></div>
-        <div class="grp"><label>invert</label><input type="checkbox" id="ui-inv"></div>
-        <button class="btn" id="dock-toggle" title="collapse / expand">▾</button>
-      </div>
-      <div id="dockbody"><div id="modes"></div><div id="params"></div></div>`;
-    document.body.appendChild(dock);
-    document.documentElement.style.setProperty('--dock-h','300px');
 
-    // ── output size presets (mirror engine list) ──
+    // ── left rail: mode grid ──
+    const left=document.createElement('div'); left.id='ui-left';
+    MODES.forEach(([gname,items])=>{
+      const g=document.createElement('div'); g.className='mgroup'; g.innerHTML=`<h4>${gname}</h4>`;
+      items.forEach(([id,name])=>{const c=document.createElement('button');c.className='chip';c.dataset.mode=id;c.textContent=name;
+        c.onclick=()=>{E.setMode(id);selectMode(id);};g.appendChild(c);});
+      left.appendChild(g);
+    });
+    document.body.appendChild(left);
+
+    // ── right rail: params ──
+    const right=document.createElement('div'); right.id='ui-right';
+    right.innerHTML=`<div class="modehead"></div><div id="params"></div>`;
+    document.body.appendChild(right);
+    const headEl=right.querySelector('.modehead'), paramsEl=right.querySelector('#params');
+
+    // ── bottom bar ──
+    const bar=document.createElement('div'); bar.id='ui-bottom';
+    bar.innerHTML=`
+      <button class="btn ghost" id="t-left" title="modes">◧</button>
+      <div class="grp"><label>output</label><select id="ui-size"></select></div>
+      <div class="grp" id="ui-wh" style="display:none"><input type="number" id="ui-w"><span style="color:var(--ui-mut)">×</span><input type="number" id="ui-h"></div>
+      <div class="sep"></div>
+      <div class="grp"><label>dur</label><input type="number" id="ui-dur" min="0.5" max="45" step="0.5" style="width:52px"><span style="color:var(--ui-mut)">s</span></div>
+      <div class="sep"></div>
+      <div class="grp"><button class="btn" id="ui-play">▶ play</button><button class="btn" id="ui-restart">⟳</button><button class="btn" id="ui-loop">loop</button></div>
+      <div class="sep"></div>
+      <div class="grp"><span id="recwrap"><button class="btn rec" id="ui-rec">● record</button><span id="recbar"></span></span></div>
+      <div class="sep"></div>
+      <div class="grp"><label>display</label><select id="ui-disp"></select></div>
+      <div class="grp"><label>invert</label><input type="checkbox" id="ui-inv"></div>
+      <button class="btn ghost" id="t-right" title="settings" style="margin-left:auto">◨</button>`;
+    document.body.appendChild(bar);
+
+    // rail toggles
+    bar.querySelector('#t-left').onclick=()=>document.body.classList.toggle('no-left');
+    bar.querySelector('#t-right').onclick=()=>document.body.classList.toggle('no-right');
+
+    // ── output size ──
     const SIZES=[['ELVERKET ALL · 8000×4373',[8000,4373]],['ELVERKET Panorama · 8000×3411',[8000,3411]],
       ['ELVERKET Floor · 8160×2719',[8160,2719]],['ELVERKET Long wall · 8160×1920',[8160,1920]],
       ['ELVERKET Short wall · 2719×1920',[2719,1920]],['8K · 7680×4320',[7680,4320]],['6K · 5760×3240',[5760,3240]],
       ['4K · 3840×2160',[3840,2160]],['1440p · 2560×1440',[2560,1440]],['1080p · 1920×1080',[1920,1080]],
       ['720p · 1280×720',[1280,720]],['Square · 1080×1080',[1080,1080]],['Vertical · 1080×1920',[1080,1920]],['custom…','custom']];
-    const selSize=dock.querySelector('#ui-size');
+    const selSize=bar.querySelector('#ui-size');
     SIZES.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s[0];selSize.appendChild(o);});
-    const whBox=dock.querySelector('#ui-wh'), wIn=dock.querySelector('#ui-w'), hIn=dock.querySelector('#ui-h');
+    const whBox=bar.querySelector('#ui-wh'), wIn=bar.querySelector('#ui-w'), hIn=bar.querySelector('#ui-h');
     function syncSizeUI(){
       const idx=SIZES.findIndex(s=>Array.isArray(s[1])&&s[1][0]===st.outW&&s[1][1]===st.outH);
-      selSize.value = idx>=0?idx:(SIZES.length-1);
-      whBox.style.display = idx>=0?'none':'flex'; wIn.value=st.outW; hIn.value=st.outH;
+      selSize.value=idx>=0?idx:(SIZES.length-1); whBox.style.display=idx>=0?'none':'flex'; wIn.value=st.outW; hIn.value=st.outH;
     }
-    selSize.onchange=()=>{const s=SIZES[+selSize.value];
-      if(s[1]==='custom'){whBox.style.display='flex';return;} E.setSize(s[1][0],s[1][1]); syncSizeUI();};
+    selSize.onchange=()=>{const s=SIZES[+selSize.value]; if(s[1]==='custom'){whBox.style.display='flex';return;} E.setSize(s[1][0],s[1][1]); syncSizeUI();};
     wIn.onchange=hIn.onchange=()=>{E.setSize(+wIn.value,+hIn.value); selSize.value=SIZES.length-1;};
 
     // ── display preview ──
-    const selDisp=dock.querySelector('#ui-disp');
-    [['Auto (≤1440p)','1440'],['720p','720'],['1080p','1080'],['4K','3840'],['Full (= output)','full']].forEach(([l,v])=>{
+    const selDisp=bar.querySelector('#ui-disp');
+    [['Auto (≤1440p)','1440'],['720p','720'],['1080p','1080'],['4K','3840'],['Full','full']].forEach(([l,v])=>{
       const o=document.createElement('option');o.value=v;o.textContent=l;selDisp.appendChild(o);});
     selDisp.value=st.previewScale||'1440'; selDisp.onchange=()=>E.setPreview(selDisp.value);
 
     // ── duration / invert ──
-    const durIn=dock.querySelector('#ui-dur'); durIn.value=st.duration;
+    const durIn=bar.querySelector('#ui-dur'); durIn.value=st.duration;
     durIn.onchange=()=>{st.duration=Math.max(.5,Math.min(45,+durIn.value));E.save();};
-    const inv=dock.querySelector('#ui-inv'); inv.checked=!!st.matteInvert;
-    inv.onchange=()=>{st.matteInvert=inv.checked;};
+    const inv=bar.querySelector('#ui-inv'); inv.checked=!!st.matteInvert; inv.onchange=()=>{st.matteInvert=inv.checked;};
 
     // ── transport ──
-    const bPlay=dock.querySelector('#ui-play'), bLoop=dock.querySelector('#ui-loop');
-    dock.querySelector('#ui-play').onclick=()=>{E.togglePlay();refreshTransport();};
-    dock.querySelector('#ui-restart').onclick=()=>{E.restartPlayback();refreshTransport();};
+    const bPlay=bar.querySelector('#ui-play'), bLoop=bar.querySelector('#ui-loop');
+    bPlay.onclick=()=>{E.togglePlay();refreshTransport();};
+    bar.querySelector('#ui-restart').onclick=()=>{E.restartPlayback();refreshTransport();};
     bLoop.onclick=()=>{E.toggleLoop();refreshTransport();};
     function refreshTransport(){ bPlay.textContent=E.playing?'❚❚ pause':'▶ play'; bPlay.classList.toggle('on',E.playing); bLoop.classList.toggle('on',E.loop); }
     setInterval(refreshTransport,300); refreshTransport();
 
-    // ── record + progress (reads the engine's #rec-progress overlay state) ──
-    const bRec=dock.querySelector('#ui-rec'), recbar=dock.querySelector('#recbar');
+    // ── record + progress ──
+    const bRec=bar.querySelector('#ui-rec'), recbar=bar.querySelector('#recbar');
     bRec.onclick=()=>E.startRecording();
     setInterval(()=>{
-      const ov=document.getElementById('rec-progress');
-      const on=ov&&getComputedStyle(ov).display!=='none';
+      const ov=document.getElementById('rec-progress'); const on=ov&&getComputedStyle(ov).display!=='none';
       bRec.classList.toggle('busy',!!on);
       if(on){const f=ov.querySelector('.rec-fill'); recbar.style.width=f.style.width;
-        recbar.className=''; if(/2ec27a|46/.test(f.style.background))recbar.classList.add('done');}
+        recbar.className=''; if(/2ec27a/.test(f.style.background))recbar.classList.add('done');}
       else recbar.style.width='0%';
     },120);
 
-    // ── dock collapse ──
-    dock.querySelector('#dock-toggle').onclick=()=>{document.body.classList.toggle('dock-collapsed');
-      dock.querySelector('#dock-toggle').textContent=document.body.classList.contains('dock-collapsed')?'▴':'▾';};
-
-    // ── mode grid ──
-    const modesEl=dock.querySelector('#modes');
-    MODES.forEach(([gname,items])=>{
-      const g=document.createElement('div'); g.className='mgroup';
-      g.innerHTML=`<h4>${gname}</h4>`; const grid=document.createElement('div'); grid.className='mgrid';
-      items.forEach(([id,name])=>{const c=document.createElement('button');c.className='chip';c.dataset.mode=id;c.textContent=name;
-        c.onclick=()=>{E.setMode(id);selectMode(id);};grid.appendChild(c);});
-      g.appendChild(grid); modesEl.appendChild(g);
-    });
-    function selectMode(id){ modesEl.querySelectorAll('.chip').forEach(c=>c.classList.toggle('sel',+c.dataset.mode===id)); buildParams(id); }
-
-    // ── params ──
-    const paramsEl=dock.querySelector('#params');
+    // ── params builder ──
     function widget(key){
       const spec=P[key]; if(!spec) return null;
       const row=document.createElement('div'); row.className='row';
       if(spec.t==='check'){ row.classList.add('check');
-        const id='w_'+key; row.innerHTML=`<label><input type="checkbox" id="${id}"> ${spec.label}</label>`;
-        const cb=row.querySelector('input'); cb.checked=!!st[key]; cb.onchange=()=>{st[key]=cb.checked;};
-        return row;
+        row.innerHTML=`<label><input type="checkbox"> ${spec.label}</label>`;
+        const cb=row.querySelector('input'); cb.checked=!!st[key]; cb.onchange=()=>{st[key]=cb.checked;}; return row;
       }
       if(spec.t==='color'){
         row.innerHTML=`<span class="lab">${spec.label}</span><input type="color">`;
-        const ci=row.querySelector('input'); ci.value=st[key]||'#ffffff'; ci.oninput=()=>{st[key]=ci.value;};
-        return row;
+        const ci=row.querySelector('input'); ci.value=st[key]||'#ffffff'; ci.oninput=()=>{st[key]=ci.value;}; return row;
       }
       if(spec.t==='select'){
         row.innerHTML=`<span class="lab">${spec.label}</span><select></select>`;
         const se=row.querySelector('select');
         Object.entries(spec.opts).forEach(([l,v])=>{const o=document.createElement('option');o.value=v;o.textContent=l;se.appendChild(o);});
-        se.value=st[key]; se.onchange=()=>{st[key]=isNaN(+se.value)?se.value:+se.value;};
-        return row;
+        se.value=st[key]; se.onchange=()=>{st[key]=isNaN(+se.value)?se.value:+se.value;}; return row;
       }
       const [label,mn,mx,stp]=spec; const dec=(stp+'').includes('.')?(stp+'').split('.')[1].length:0;
       row.innerHTML=`<span class="lab">${label}</span><input type="range" min="${mn}" max="${mx}" step="${stp}"><span class="val"></span>`;
       const r=row.querySelector('input'), v=row.querySelector('.val');
       r.value=st[key]; v.textContent=(+st[key]).toFixed(dec);
-      r.oninput=()=>{st[key]=+r.value; v.textContent=(+r.value).toFixed(dec);};
-      return row;
+      r.oninput=()=>{st[key]=+r.value; v.textContent=(+r.value).toFixed(dec);}; return row;
     }
     function section(title,keys,dim){
-      const s=document.createElement('div'); s.className='psec'+(dim?' dim':'');
-      s.innerHTML=`<h4>${title}</h4>`; const cols=document.createElement('div'); cols.className='pcols';
-      keys.forEach(k=>{const w=widget(k); if(w)cols.appendChild(w);}); s.appendChild(cols); return s;
+      const s=document.createElement('div'); s.className='psec'+(dim?' dim':''); s.innerHTML=`<h4>${title}</h4>`;
+      keys.forEach(k=>{const w=widget(k); if(w)s.appendChild(w);}); return s;
     }
     function buildParams(m){
       paramsEl.innerHTML='';
-      // mode-specific first (always relevant)
-      if(MK[m]) paramsEl.appendChild(section(MODE_NAME[m]||'mode',MK[m],false));
-      // global groups with gray-out
+      if(MK[m]) paramsEl.appendChild(section('this mode',MK[m],false));
       paramsEl.appendChild(section('Reveal',['originAmount','spread'],!REL.reveal(m)));
       paramsEl.appendChild(section('Movement',['turbulence','flow','undulate','animate'],!REL.movement(m)));
       paramsEl.appendChild(section('Direction / source',['driftAngle','driftAmount','sunX','sunY','streakMove'],!REL.dir(m)));
@@ -252,9 +243,12 @@
       paramsEl.appendChild(section('Advanced',['originX','originY','maskScale','curve','seed','maskShift','organic','edges'],!REL.advanced(m)));
       paramsEl.appendChild(section('Vignette (global)',['vignAmount','vignFeather','vignAnimate'],false));
     }
+    function selectMode(id){
+      left.querySelectorAll('.chip').forEach(c=>c.classList.toggle('sel',+c.dataset.mode===id));
+      headEl.textContent=MODE_NAME[id]||('mode '+id); buildParams(id);
+    }
 
     syncSizeUI(); selectMode(st.mode);
-    // keep size UI in sync if engine changes it elsewhere
-    setInterval(()=>{ if(+selSize.selectedOptions[0]?.value!==undefined){} syncSizeUI(); }, 1500);
+    setInterval(syncSizeUI, 1500);
   }
 })();
