@@ -114,7 +114,9 @@ struct Params {
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
   driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
   gdCloud: f32, gdPulse: f32, ambCount: f32, ambSize: f32,
-  ambSoft: f32, ambSpeed: f32, ambDetail: f32, _amb1: f32,
+  ambSoft: f32, ambSpeed: f32, ambDetail: f32, sunX: f32,
+  sunY: f32, streakMove: f32, vignAmount: f32, vignFeather: f32,
+  vignAnimate: f32, _v0: f32, _v1: f32, _v2: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -251,14 +253,20 @@ fn ambStreaks(uv: vec2f) -> f32 {
   var pp = uv; pp.x = pp.x * p.canvasAspect;
   let across = dot(pp, perp);
   let along  = dot(pp, dir);
-  let drift = ph * (0.04 + p.ambSpeed * 0.22);   // gentle drift along the streaks (slow)
-  let sc = vec2f(across * mix(3.5, 11.0, p.ambCount), along * mix(1.4, 0.7, p.ambSize) + drift);
+  // movement direction (streakMove) is independent of the line orientation (driftAngle):
+  // project a movement vector onto the across/along axes so vertical lines can slide sideways.
+  let speed = ph * (0.04 + p.ambSpeed * 0.22);
+  let mvA = p.streakMove * 6.2831853;
+  let moveV = vec2f(cos(mvA), sin(mvA)) * speed;
+  let dAcross = dot(moveV, perp) * 4.0;
+  let dAlong  = dot(moveV, dir);
+  let sc = vec2f(across * mix(3.5, 11.0, p.ambCount) + dAcross, along * mix(1.4, 0.7, p.ambSize) + dAlong);
   var s = fbm(sc) + 0.55 * fbm(sc * vec2f(2.2, 1.0) + vec2f(0.0, drift));
   s = pow(clamp((s - 0.45) * 1.9, 0.0, 1.0), mix(2.6, 0.9, p.ambSoft));  // sharpen->soften
   let smear = (fbm(sc + vec2f(0.0, 0.05)) + fbm(sc - vec2f(0.0, 0.05))) * 0.12;
   var m = s + smear;
   if (p.ambDetail > 0.001) {                                  // fine striations within the streaks
-    let fineSc = vec2f(across * mix(14.0, 40.0, p.ambDetail), along * mix(2.0, 1.0, p.ambSize) + drift * 1.7);
+    let fineSc = vec2f(across * mix(14.0, 40.0, p.ambDetail), along * mix(2.0, 1.0, p.ambSize) + dAlong * 1.7);
     m = m * (1.0 + (fbm(fineSc) - 0.5) * p.ambDetail * 0.7);
   }
   return clamp(m, 0.0, 1.0);
@@ -320,8 +328,7 @@ fn ambAurora(uv: vec2f) -> f32 {
 }
 fn ambGlare(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853;
-  var sun = vec2f(0.62, 0.4);
-  if (p.originCount > 0u) { sun = p.originPts[0].xy; }   // placed point sets the sun source
+  var sun = vec2f(p.sunX, p.sunY);                       // sun position set by sliders
   sun = sun + vec2f(0.04 * sin(ph * 0.5), 0.03 * cos(ph * 0.4));
   var duv = uv - sun; duv.x = duv.x * p.canvasAspect;
   let d = length(duv);
@@ -338,8 +345,7 @@ fn ambGlare(uv: vec2f) -> f32 {
 fn ambGodrays(uv: vec2f) -> f32 {
   // light shafts fanning down from a high sun, broken by drifting cloud gaps
   let ph = p.t * 6.2831853;
-  var sun = vec2f(0.5 + (p.driftAngle - 0.5) * 0.9, -0.12);   // driftAngle steers the sun sideways
-  if (p.originCount > 0u) { sun = p.originPts[0].xy; }        // or place the source with a point
+  var sun = vec2f(p.sunX, p.sunY);                            // sun position set by sliders
   var d = uv - sun; d.x = d.x * p.canvasAspect;
   let ang = atan2(d.x, d.y);                  // 0 = straight down from the sun
   let dist = length(d);
@@ -1512,9 +1518,18 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
   // the exact same organic movement can be recorded as a B/W matte video for
   // use as a luma/track matte in After Effects. Fully opaque so it records
   // cleanly. matteInvert flips polarity for "reveal A over B" style mattes.
+  // ---- global vignette: darken toward the edges; optional slow pulse ----
+  var vign = 1.0;
+  if (p.vignAmount > 0.001) {
+    let vd = distance(uv, vec2f(0.5, 0.5)) / 0.7071;          // 0 center .. 1 corner
+    let anim = 1.0 - p.vignAnimate * 0.3 * (0.5 - 0.5 * cos(p.t * 6.2831853));
+    let inner = clamp((1.0 - p.vignFeather) * anim, 0.0, 0.999);
+    vign = 1.0 - smoothstep(inner, anim, vd) * p.vignAmount;
+  }
   if (p.matteOutput == 1u) {
     var mv = clamp(effMixT, 0.0, 1.0);
     if (p.matteInvert == 1u) { mv = 1.0 - mv; }
+    mv = mv * vign;
     return vec4f(vec3f(mv), 1.0);
   }
 
@@ -1524,7 +1539,7 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
     let texL = texFitLuma(uv);
     outc = mix(outc, outc * (0.4 + 1.2 * texL), p.texBg);
   }
-  let rgb = clamp(outc, vec3f(0.0), vec3f(1.0));
+  let rgb = clamp(outc * vign, vec3f(0.0), vec3f(1.0));
   return vec4f(rgb * alpha, alpha);
 }
 `;
@@ -1618,7 +1633,9 @@ struct Params {
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
   driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
   gdCloud: f32, gdPulse: f32, ambCount: f32, ambSize: f32,
-  ambSoft: f32, ambSpeed: f32, ambDetail: f32, _amb1: f32,
+  ambSoft: f32, ambSpeed: f32, ambDetail: f32, sunX: f32,
+  sunY: f32, streakMove: f32, vignAmount: f32, vignFeather: f32,
+  vignAnimate: f32, _v0: f32, _v1: f32, _v2: f32,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -1853,7 +1870,9 @@ struct Params {
   auroraHeight: f32, auroraSpeed: f32, auroraDark: f32, auroraWave: f32,
   driftAngle: f32, driftAmount: f32, gdIntensity: f32, gdBeams: f32,
   gdCloud: f32, gdPulse: f32, ambCount: f32, ambSize: f32,
-  ambSoft: f32, ambSpeed: f32, ambDetail: f32, _amb1: f32,
+  ambSoft: f32, ambSpeed: f32, ambDetail: f32, sunX: f32,
+  sunY: f32, streakMove: f32, vignAmount: f32, vignFeather: f32,
+  vignAnimate: f32, _v0: f32, _v1: f32, _v2: f32,
 };
 @group(0) @binding(0) var<uniform> p: Params;
 @group(0) @binding(1) var texA: texture_2d<f32>;
@@ -1969,7 +1988,7 @@ function makeDisplayBindGroup(finalState) {
 //   5  seed         13  scaleB.y                                          29 bloomCount     37 saltContrast
 //   6  validA       14  offsetB.x                                         30 bloomRim       38 saltBias
 //   7  validB       15  offsetB.y                                         31 bloomRate      39 saltImage
-const UBO_SIZE = 912;  // + godray (218-221) + ambient count/size/soft/speed (222-225)
+const UBO_SIZE = 944;  // + godray (218-221) + ambient count/size/soft/speed (222-225)
 const uniformBuffer = device.createBuffer({
   size: UBO_SIZE,
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -2401,7 +2420,7 @@ const state = {
   auroraDensity: 0.5, auroraHeight: 0.5, auroraSpeed: 0.4, auroraDark: 0.3, auroraWave: 0.5,  // aurora settings
   driftAngle: 0.25, driftAmount: 0.3,  // wind direction + strength for ambient drift
   gdIntensity: 0.5, gdBeams: 0.5, gdCloud: 0.5, gdPulse: 0.4,  // godray settings
-  ambCount: 0.5, ambSize: 0.5, ambSoft: 0.5, ambSpeed: 0.25, ambDetail: 0.5,  // shared bokeh/ripples/glare/streaks
+  ambCount: 0.5, ambSize: 0.5, ambSoft: 0.5, ambSpeed: 0.25, ambDetail: 0.5, sunX: 0.5, sunY: 0.3, streakMove: 0.25, vignAmount: 0.0, vignFeather: 0.5, vignAnimate: 0.0,  // shared bokeh/ripples/glare/streaks
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
@@ -2834,6 +2853,12 @@ function writeUniforms() {
   uboF32[224] = state.ambSoft;
   uboF32[225] = state.ambSpeed;
   uboF32[226] = state.ambDetail;
+  uboF32[227] = state.sunX;
+  uboF32[228] = state.sunY;
+  uboF32[229] = state.streakMove;
+  uboF32[230] = state.vignAmount;
+  uboF32[231] = state.vignFeather;
+  uboF32[232] = state.vignAnimate;
   // -- 80..95 -- new painterly modes (16..21) + global paper grain
   uboF32[80] = state.strokeScale;
   uboF32[81] = state.strokeAniso;
@@ -3498,6 +3523,12 @@ fPlay.addBinding(state, 'previewScale', {
 // — B/W matte output (always). Invert flips black<->white direction. —
 fPlay.addBinding(state, 'matteInvert', { label: 'invert (B↔W)' });
 
+// — global vignette (all modes): edge darkening, optional pulse —
+const fVignette = fPlay.addFolder({ title: 'Vignette', expanded: false });
+fVignette.addBinding(state, 'vignAmount',  { min: 0, max: 1, step: 0.01, label: 'amount' });
+fVignette.addBinding(state, 'vignFeather', { min: 0, max: 1, step: 0.01, label: 'feather' });
+fVignette.addBinding(state, 'vignAnimate', { min: 0, max: 1, step: 0.01, label: 'animate (pulse)' });
+
 // — timing — duration as a plain number field (type it), not a slider —
 fPlay.addBinding(state, 'duration', { step: 0.5, format: (v) => `${v.toFixed(1)}s`, label: 'duration' });
 const bT = fPlay.addBinding(state, 't', { min: 0, max: 1, step: 0.001, label: 'progress' });
@@ -4024,6 +4055,9 @@ fAmbient.addBinding(state, 'ambDetail', { min: 0, max: 1, step: 0.01, label: 'de
 const fDir = fWater.addFolder({ title: 'Direction / source', expanded: true });
 fDir.addBinding(state, 'driftAngle', { min: 0, max: 1, step: 0.01, label: 'direction' });
 fDir.addBinding(state, 'driftAmount', { min: 0, max: 1, step: 0.01, label: 'amount' });
+fDir.addBinding(state, 'sunX', { min: 0, max: 1, step: 0.01, label: 'sun / source x' });
+fDir.addBinding(state, 'sunY', { min: 0, max: 1, step: 0.01, label: 'sun / source y' });
+fDir.addBinding(state, 'streakMove', { min: 0, max: 1, step: 0.01, label: 'movement dir' });
 
 const fGodray = fWater.addFolder({ title: 'Godrays', expanded: true });
 fGodray.addBinding(state, 'gdIntensity', { min: 0, max: 1, step: 0.01, label: 'intensity' });
@@ -4041,7 +4075,7 @@ function updateModeFolders() {
   fAdv.hidden = ambient;
   // Start points / paint: transition modes, Paint (37), and the ambient source
   // modes that use a placed point (ripples 34, glare 35, godrays 39)
-  fPts.hidden = !(m <= 32 || m === 34 || m === 35 || m === 37 || m === 39);
+  fPts.hidden = !(m <= 32 || m === 34 || m === 37);   // ripples(34) still uses placed sources; glare/godray now use sun sliders
   // direction / source: bokeh, streaks, glare, godrays
   fDir.hidden = !(m === 33 || m === 35 || m === 36 || m === 39);
   // hide the whole Reveal folder for ambient modes that use none of its controls
@@ -5182,7 +5216,7 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 19;
+const SESSION_VERSION = 20;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
@@ -5191,7 +5225,7 @@ const PERSIST_KEYS = [
   'pointStagger', 'pointRandom', 'paintBrush',
   'auroraDensity', 'auroraHeight', 'auroraSpeed', 'auroraDark', 'auroraWave', 'driftAngle', 'driftAmount',
   'gdIntensity', 'gdBeams', 'gdCloud', 'gdPulse',
-  'ambCount', 'ambSize', 'ambSoft', 'ambSpeed', 'ambDetail',
+  'ambCount', 'ambSize', 'ambSoft', 'ambSpeed', 'ambDetail', 'sunX', 'sunY', 'streakMove', 'vignAmount', 'vignFeather', 'vignAnimate',
   'exportFps', 'exportSizeMode', 'exportPadBottom', 'matteOutput', 'matteInvert',
   'slotAFillMode', 'slotAColor', 'slotBFillMode', 'slotBColor', 'keepAOutsideB',
   'partEnable', 'partCount', 'partBurst', 'partSpeed', 'partCurl', 'partTrail',
