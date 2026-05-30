@@ -173,7 +173,7 @@
       <div class="sep"></div>
       <div class="grp"><span id="recwrap"><button class="btn rec" id="ui-rec">● record</button><span id="recbar"></span></span></div>
       <div class="sep"></div>
-      <div class="grp"><button class="btn" id="ui-sources">sources</button><button class="btn" id="ui-presets">presets</button><button class="btn" id="ui-folder">folder</button></div>
+      <div class="grp"><button class="btn" id="ui-sources">sources</button><label class="barchk" title="use the A/B images (off = pure matte)"><input type="checkbox" id="ui-usesrc">use</label><button class="btn" id="ui-presets">presets</button><button class="btn" id="ui-folder">folder</button></div>
       <div class="sep"></div>
       <div class="grp"><label>display</label><select id="ui-disp"></select></div>
       <div class="grp"><label>invert</label><input type="checkbox" id="ui-inv"></div>
@@ -202,15 +202,10 @@
     // host once at init — keeps all of main.js's existing listeners intact.
     const srcHost=document.createElement('div'); srcHost.id='src-host';
     srcHost.innerHTML='<div class="pop-title">SOURCE IMAGES</div>';
-    // "use sources" toggle: when off, render the pure matte even with A/B loaded.
-    const useRow=document.createElement('label'); useRow.className='use-src';
-    useRow.innerHTML='<input type="checkbox" id="ui-usesrc"> use sources (A→B)';
-    srcHost.appendChild(useRow);
+    // 'use sources' toggle now lives in the bottom bar (next to the sources button)
     ['slot-bar','library-section'].forEach(id=>{ const el=document.getElementById(id); if(el) srcHost.appendChild(el); });
-    const useCb=useRow.querySelector('#ui-usesrc');
-    useCb.checked=E.useSources;
-    useCb.onchange=()=>{ E.setUseSources(useCb.checked); };
-    bar.querySelector('#ui-sources').onclick=()=>{ useCb.checked=E.useSources; openPop('sources', bar.querySelector('#ui-sources'), (host)=>{ host.appendChild(srcHost); }); };
+    { const u=bar.querySelector('#ui-usesrc'); if(u){ u.checked=E.useSources; u.onchange=()=>{ E.setUseSources(u.checked); }; } }
+    bar.querySelector('#ui-sources').onclick=()=>{ openPop('sources', bar.querySelector('#ui-sources'), (host)=>{ host.appendChild(srcHost); }); };
 
     // PRESETS
     bar.querySelector('#ui-presets').onclick=()=>openPop('presets', bar.querySelector('#ui-presets'), (host)=>{
@@ -353,14 +348,38 @@
       {
         const ptsRelevant = (m<=32 && m!==31) || m===34;   // transition modes + ripples
         const isPaint = (m===37);
-        const sec = section('Start points / paint',
-          isPaint ? ['paintBrush'] : ['originFromImage','pointStagger','pointRandom'],
-          !(ptsRelevant || isPaint));
+        const curSrc = isPaint ? 'paint' : (E.originSource ? E.originSource() : 'auto');
+        const showPaint = isPaint || (ptsRelevant && curSrc==='paint');
+        const startKeys = showPaint ? ['paintBrush'] : (curSrc==='points' ? ['pointStagger','pointRandom'] : ['originFromImage']);
+        const sec = section('Start points / paint', startKeys, !(ptsRelevant || isPaint));
         if (ptsRelevant || isPaint) {
+          if (!isPaint) {
+            const selWrap=document.createElement('div'); selWrap.className='ptsbar';
+            const lbl=document.createElement('span'); lbl.className='hint'; lbl.textContent='start:';
+            const sel=document.createElement('select'); sel.className='mini';
+            [['auto','auto (centre / from A)'],['points','points'],['paint','paint a region']].forEach(([v,t])=>{
+              const o=document.createElement('option'); o.value=v; o.textContent=t; if(v===curSrc)o.selected=true; sel.appendChild(o);
+            });
+            sel.onchange=()=>{ E.setOriginSource(sel.value); buildParams(m); };
+            selWrap.appendChild(lbl); selWrap.appendChild(sel); sec.appendChild(selWrap);
+          }
           const pb=document.createElement('div'); pb.className='ptsbar';
-          if (isPaint) {
-            pb.innerHTML='<span class="hint">drag on the canvas to paint the reveal</span>';
-          } else {
+          if (showPaint) {
+            if (!isPaint) {
+              const bd=document.createElement('span'); bd.className='hint'; bd.textContent='over:';
+              const cur=(E.paintBackdrop?E.paintBackdrop():'A');
+              const ba=document.createElement('button'); ba.className='btn sm'; ba.textContent='A'; ba.classList.toggle('on',cur==='A');
+              const bb=document.createElement('button'); bb.className='btn sm'; bb.textContent='B'; bb.classList.toggle('on',cur==='B');
+              ba.onclick=()=>{ E.setPaintBackdrop('A'); ba.classList.add('on'); bb.classList.remove('on'); };
+              bb.onclick=()=>{ E.setPaintBackdrop('B'); bb.classList.add('on'); ba.classList.remove('on'); };
+              pb.appendChild(bd); pb.appendChild(ba); pb.appendChild(bb);
+            }
+            const clr=document.createElement('button'); clr.className='btn sm'; clr.textContent='clear';
+            clr.onclick=()=>{ E.clearPaint(); };
+            pb.appendChild(clr);
+            const hint=document.createElement('span'); hint.className='hint'; hint.textContent='drag on the canvas to paint where it starts';
+            pb.appendChild(hint);
+          } else if (curSrc==='points') {
             const place=document.createElement('button'); place.className='btn sm';
             const sync=()=>{ const on=E.state.placePoints; place.textContent=on?'✓ click canvas — done':'✛ place points'; place.classList.toggle('on',on); };
             place.onclick=()=>{ E.setPlacePoints(!E.state.placePoints); sync(); };

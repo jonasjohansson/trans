@@ -296,7 +296,7 @@ fn ambRipples(uv: vec2f) -> f32 {
   let ph = p.t * 6.2831853 * (0.3 + p.ambSpeed * 0.9);   // slower base speed
   var auv = uv; auv.x = auv.x * p.canvasAspect;
   let w = vec2f(fbm(auv * 3.0 + ph * 0.06), fbm(auv * 3.0 + 5.0 - ph * 0.05)) - vec2f(0.5, 0.5);
-  let useClicked = p.originCount > 0u;
+  let useClicked = p.originCount > 0u && p.originCount < 200u;
   let nsrc = select(u32(mix(1.0, 6.0, p.ambCount)), min(6u, p.originCount), useClicked);
   var v = 0.0;
   for (var i = 0u; i < 6u; i = i + 1u) {
@@ -1273,7 +1273,11 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
   if (p.originAmount > 0.0001) {
     let diag = sqrt(p.canvasAspect * p.canvasAspect + 1.0);
     var d = 1.0;
-    if (p.originCount > 0u) {
+    if (p.originCount == 255u) {
+      // paint-origin: the painted texture (texTexture) marks where it starts
+      let pl = texFitLuma(uv);
+      d = clamp(1.0 - pl, 0.0, 1.0);
+    } else if (p.originCount > 0u) {
       // grow from the nearest placed emission point (multiple blooms)
       for (var i = 0u; i < 8u; i = i + 1u) {
         if (i >= p.originCount) { break; }
@@ -3054,7 +3058,7 @@ function writeUniforms() {
     const o = 176 + i * 4;
     uboF32[o] = pts[i].x; uboF32[o + 1] = pts[i].y; uboF32[o + 2] = startT; uboF32[o + 3] = 0;
   }
-  uboU32[208] = nPts;
+  uboU32[208] = (state.originSource === 'paint' && state._paintReady) ? 255 : nPts;
   uboF32[209] = state.flow;  // turbulence time-drift (animated ink)
   uboF32[210] = state.undulate;  // slow large-scale dance of the reveal front
   uboF32[211] = state.auroraDensity;
@@ -5244,10 +5248,11 @@ function drawPaintPreview() {
   samSyncOverlay();
   samOverlayCtx.clearRect(0, 0, samOverlay.width, samOverlay.height);
   if (paintCanvas) { samOverlayCtx.globalAlpha = 0.35; samOverlayCtx.drawImage(paintCanvas, 0, 0, samOverlay.width, samOverlay.height); samOverlayCtx.globalAlpha = 1; }
-  samOverlay.classList.toggle('visible', state.mode === 37);
+  samOverlay.classList.toggle('visible', state.mode === 37 || state.originSource === 'paint');
 }
 function syncPaintMode() {
-  const on = state.mode === 37;
+  const paintOrigin = (state.originSource === 'paint') && (state.mode <= 32 || state.mode === 34) && state.mode !== 31;
+  const on = state.mode === 37 || paintOrigin;
   if (on) { ensurePaintCanvas(); uploadPaintTexture(); drawPaintPreview(); }
   samOverlay.classList.toggle('interactive', on || state.placePoints);
   samOverlay.classList.toggle('visible', on || state.placePoints || state.originPoints.length > 0);
@@ -5259,7 +5264,7 @@ function paintAt(e) {
   paintDab(sx, sy, _curStrokeVal); drawPaintPreview(); paintDirty = true;
 }
 samOverlay.addEventListener('pointerdown', e => {
-  if (state.mode !== 37) return;
+  if (state.mode !== 37 && state.originSource !== 'paint') return;
   painting = true;
   // each stroke staggers like the points (order + randomness)
   const k = paintStrokeIdx, rr = Math.random();
@@ -5269,7 +5274,7 @@ samOverlay.addEventListener('pointerdown', e => {
   paintAt(e);
 });
 samOverlay.addEventListener('pointermove', e => { if (painting) paintAt(e); });
-window.addEventListener('pointerup', () => { if (!painting) return; painting = false; paintStrokeIdx++; uploadPaintTexture(); restartPlayback(); });
+window.addEventListener('pointerup', () => { if (!painting) return; painting = false; paintStrokeIdx++; state._paintReady = true; uploadPaintTexture(); restartPlayback(); });
 setInterval(() => { if (painting && paintDirty) { paintDirty = false; uploadPaintTexture(); } }, 160);
 
 function samSetSegmentMode(on) {
@@ -5519,6 +5524,11 @@ window.__engine = {
   resize: resizeCanvas, save: saveSession,
   setPlacePoints, drawOriginPoints,
   clearPoints() { state.originPoints = []; drawOriginPoints(); restartPlayback(); },
+  setOriginSource(srcMode) { state.originSource = srcMode; if (srcMode === 'paint') { ensurePaintCanvas(); state.placePoints = false; } if (typeof syncPaintMode === 'function') syncPaintMode(); drawPaintPreview(); restartPlayback(); saveSession(); },
+  originSource() { return state.originSource || 'auto'; },
+  setPaintBackdrop(ab) { state.paintBackdrop = ab; state.t = (ab === 'B' ? 1 : 0); state.playing = false; drawPaintPreview(); saveSession(); },
+  paintBackdrop() { return state.paintBackdrop || 'A'; },
+  clearPaint() { ensurePaintCanvas(); paintCtx.fillStyle = '#000'; paintCtx.fillRect(0, 0, paintCanvas.width, paintCanvas.height); paintStrokeIdx = 0; state._paintReady = false; uploadPaintTexture(); drawPaintPreview(); restartPlayback(); },
   setFill(slot, mode) { state[slot === 'A' ? 'slotAFillMode' : 'slotBFillMode'] = mode; resizeCanvas(); },
   get playing() { return state.playing; },
   get loop() { return state.loop; },
