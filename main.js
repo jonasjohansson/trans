@@ -3970,7 +3970,6 @@ function updateModeFolders() {
   fMelt.hidden      = state.mode !== 29;
   fLight.hidden     = state.mode !== 30;
 }
-updateModeFolders();
 
 const fDis = tabMode.addFolder({ title: 'Reveal', expanded: true });
 // — core: where it starts and how soft the edge is —
@@ -4011,6 +4010,8 @@ fAdv.addBinding(state, 'seed', { min: 0, max: 999, step: 1 });
 fAdv.addBinding(state, 'maskShift', { min: -0.5, max: 0.5, step: 0.005, label: 'mask shift' });
 fAdv.addBinding(state, 'organic',   { min: 0, max: 1, step: 0.01, label: 'organic (smooth mode)' });
 fAdv.addBinding(state, 'edges',     { min: -1, max: 1, step: 0.01, label: 'edges (smooth mode)' });
+
+updateModeFolders();   // initial visibility — now that all folders/bindings exist
 
 // ----- Canvas size (custom transition dimensions, independent of source) -----
 // (Canvas size moved to the top "Setup" block.)
