@@ -399,6 +399,133 @@ fn ambClouds(uv: vec2f) -> f32 {
   let soft = mix(0.05, 0.45, p.ambSoft);
   return clamp(smoothstep(cov, cov + soft, c), 0.0, 1.0);
 }
+fn ambCaustics(uv: vec2f) -> f32 {
+  // water-surface caustic web: domain-warped ridged noise that flows + glimmers.
+  let ph = p.t * 6.2831853 * (0.25 + p.ambSpeed * 0.6);
+  var q = uv; q.x = q.x * p.canvasAspect;
+  let a = p.driftAngle * 6.2831853;
+  let wind = vec2f(cos(a), sin(a)) * ph * 0.15 * p.driftAmount;
+  var s = q * mix(3.5, 12.0, p.ambSize) + wind;
+  let w = vec2f(fbm(s * 0.6 + ph * 0.1), fbm(s * 0.6 + 5.2 - ph * 0.08)) - vec2f(0.5);
+  s = s + w * 1.5;
+  var v = 0.0; var amp = 0.6; var fr = 1.0;
+  for (var i = 0; i < 3; i = i + 1) {
+    let n = vnoise(s * fr + ph * (0.2 + 0.1 * f32(i)));
+    v = v + amp * (1.0 - abs(2.0 * n - 1.0));
+    fr = fr * 2.1; amp = amp * 0.55;
+  }
+  v = pow(clamp(v, 0.0, 1.0), mix(3.0, 1.0, p.ambSoft));
+  let glim = (fbm(s * 6.0 + ph * 0.6) - 0.5) * p.ambDetail * 0.9;
+  return clamp(v * (1.0 + glim), 0.0, 1.0);
+}
+fn ambEmbers(uv: vec2f) -> f32 {
+  // drifting glowing motes (embers / fireflies): rise + twinkle, soft glow.
+  let ph = p.t * 6.2831853;
+  var q = uv; q.x = q.x * p.canvasAspect;
+  let count = u32(mix(10.0, 60.0, p.ambCount));
+  let a = p.driftAngle * 6.2831853;
+  let dir = vec2f(cos(a), sin(a));
+  var v = 0.0;
+  for (var i = 0u; i < 60u; i = i + 1u) {
+    if (i >= count) { break; }
+    let fi = f32(i) + 1.0;
+    let speed = 0.3 + 0.7 * hash21(vec2f(fi, 2.1));
+    let base = vec2f(hash21(vec2f(fi, 1.3)), hash21(vec2f(fi, 7.7)));
+    var c = fract(base + dir * ph * 0.04 * speed * p.driftAmount
+                + vec2f(0.0, -ph * 0.05 * speed)
+                + 0.02 * vec2f(sin(ph * speed * 2.0 + fi), cos(ph * speed * 1.7 + fi)));
+    let efade = smoothstep(0.0, 0.08, c.x) * smoothstep(1.0, 0.92, c.x)
+              * smoothstep(0.0, 0.08, c.y) * smoothstep(1.0, 0.92, c.y);
+    c.x = c.x * p.canvasAspect;
+    let d = length(q - c);
+    let r = mix(0.004, 0.02, hash21(vec2f(fi, 5.5))) * mix(0.6, 1.6, p.ambSize);
+    let tw = 0.5 + 0.5 * sin(ph * (1.5 + speed * 3.0) + fi * 2.0);
+    let core = exp(-d * d / (r * r));
+    let glow = exp(-d / (r * 4.0 + 0.002)) * (0.2 + 0.2 * p.ambDetail);
+    v = v + (core + glow) * mix(0.35, 1.0, tw) * efade;
+  }
+  return clamp(v, 0.0, 1.0);
+}
+fn ambMist(uv: vec2f) -> f32 {
+  // slow low-lying fog: parallax fbm layers sliding on the wind.
+  let ph = p.t * 6.2831853 * (0.15 + p.ambSpeed * 0.4);
+  var q = uv; q.x = q.x * p.canvasAspect;
+  let a = p.driftAngle * 6.2831853;
+  let wind = vec2f(cos(a), sin(a));
+  let sc = mix(1.2, 4.0, p.ambSize);
+  var v = 0.0; var amp = 0.55;
+  for (var i = 0; i < 3; i = i + 1) {
+    let fi = f32(i);
+    let off = wind * ph * (0.1 + 0.08 * fi) + vec2f(0.0, fi * 3.3);
+    let w = vec2f(fbm(q * sc * 0.5 + off), fbm(q * sc * 0.5 + off + 5.0)) - vec2f(0.5);
+    v = v + amp * fbm(q * sc * (1.0 + fi * 0.6) + w * 0.8 + off);
+    amp = amp * 0.6;
+  }
+  let cov = mix(0.7, 0.25, p.ambCount);
+  v = smoothstep(cov, cov + mix(0.05, 0.4, p.ambSoft), v);
+  v = v * (1.0 + (fbm(q * sc * 4.0 + ph) - 0.5) * p.ambDetail * 0.4);
+  return clamp(v, 0.0, 1.0);
+}
+fn ambRain(uv: vec2f) -> f32 {
+  // falling rain streaks, slanted by direction; faint haze behind.
+  let ph = p.t * 6.2831853 * (0.6 + p.ambSpeed * 1.2);
+  var q = uv; q.x = q.x * p.canvasAspect;
+  let slant = (p.driftAngle - 0.5) * 1.4;
+  let sx = q.x + q.y * slant;
+  let cols = mix(40.0, 160.0, p.ambCount);
+  let colf = sx * cols;
+  let col = floor(colf);
+  let fx = fract(colf);
+  let seed = hash21(vec2f(col, 1.7));
+  let speed = 0.6 + seed;
+  let yy = fract(q.y * mix(1.0, 3.0, p.ambSize) + ph * speed + seed * 10.0);
+  let streak = pow(1.0 - yy, mix(8.0, 28.0, 1.0 - p.ambSoft));
+  let lineW = pow(smoothstep(0.5, 0.0, abs(fx - 0.5)), mix(6.0, 26.0, p.ambSize));
+  var v = streak * lineW * (0.5 + 0.5 * seed);
+  v = v + fbm(q * 8.0 + ph * 0.3) * 0.05 * p.ambDetail;
+  return clamp(v, 0.0, 1.0);
+}
+fn ambSnow(uv: vec2f) -> f32 {
+  // drifting snow in parallax depth layers, gentle sway.
+  let ph = p.t * 6.2831853;
+  var q = uv; q.x = q.x * p.canvasAspect;
+  let a = p.driftAngle * 6.2831853;
+  let dir = vec2f(cos(a), sin(a));
+  var v = 0.0;
+  for (var L = 0; L < 3; L = L + 1) {
+    let lf = f32(L);
+    let dens = mix(8.0, 26.0, p.ambCount) * (1.0 + lf * 0.5);
+    let sz = mix(0.5, 1.4, p.ambSize) * (1.0 - lf * 0.22);
+    let sp = (0.05 + 0.04 * lf) * (0.5 + p.ambSpeed);
+    let drift = dir * ph * 0.02 * p.driftAmount + vec2f(sin(ph * 0.5 + lf) * 0.02, -ph * sp);
+    let g = (q + drift) * dens;
+    let cell = floor(g); let f = fract(g);
+    let rnd = hash21(cell + lf * 13.0);
+    let rnd2 = hash21(cell + lf * 7.0 + 3.0);
+    let center = vec2f(0.3 + 0.4 * rnd, 0.3 + 0.4 * rnd2);
+    let d = length(f - center);
+    let r = 0.10 * sz * (0.6 + 0.5 * rnd);
+    let flake = smoothstep(r, r * 0.2, d);
+    let sway = 0.5 + 0.5 * sin(ph * (1.0 + rnd * 2.0) + cell.x);
+    v = v + flake * mix(0.5, 1.0, sway) * (0.5 + 0.5 / (1.0 + lf));
+  }
+  return clamp(v, 0.0, 1.0);
+}
+fn ambMarble(uv: vec2f) -> f32 {
+  // flowing liquid marble veins from repeated domain warping.
+  let ph = p.t * 6.2831853 * (0.1 + p.ambSpeed * 0.4);
+  var q = uv; q.x = q.x * p.canvasAspect;
+  let a = p.driftAngle * 6.2831853;
+  let wind = vec2f(cos(a), sin(a)) * ph * 0.1 * p.driftAmount;
+  var s = q * mix(2.0, 6.0, p.ambSize) + wind;
+  for (var i = 0; i < 3; i = i + 1) {
+    let w = vec2f(fbm(s + ph * 0.1 + f32(i) * 2.0), fbm(s + 5.0 - ph * 0.08 + f32(i) * 2.0)) - vec2f(0.5);
+    s = s + w * mix(0.6, 1.4, p.ambDetail);
+  }
+  var v = 0.5 + 0.5 * sin((s.x + s.y) * 1.5 + fbm(s * 2.0) * 4.0);
+  v = pow(v, mix(2.5, 0.8, p.ambSoft));
+  return clamp(v, 0.0, 1.0);
+}
 
 fn sampleFit(tex: texture_2d<f32>, uv: vec2f, scale: vec2f, offset: vec2f, valid: u32, color: vec3f) -> vec4f {
   // valid encoding: 0 = no image (bg fallback), 1 = image, 2 = solid color, 3 = transparent.
@@ -1544,6 +1671,12 @@ fn organicMask(uv: vec2f, lA: f32, lB: f32, edge: f32) -> f32 {
   else if (p.mode == 38u) { effMixT = ambAurora(uv); }
   else if (p.mode == 39u) { effMixT = ambGodrays(uv); }
   else if (p.mode == 40u) { effMixT = ambClouds(uv); }
+  else if (p.mode == 41u) { effMixT = ambCaustics(uv); }
+  else if (p.mode == 42u) { effMixT = ambEmbers(uv); }
+  else if (p.mode == 43u) { effMixT = ambMist(uv); }
+  else if (p.mode == 44u) { effMixT = ambRain(uv); }
+  else if (p.mode == 45u) { effMixT = ambSnow(uv); }
+  else if (p.mode == 46u) { effMixT = ambMarble(uv); }
   else if (p.mode == 40u) { effMixT = ambBlooms(uv); }
   // Per-slot alpha comes straight from sampleFit: a PNG's own alpha channel for
   // image slots (valid==1u), 0 for 'transparent' fill mode (valid==3u), and 1 for
