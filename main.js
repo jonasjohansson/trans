@@ -2405,7 +2405,7 @@ const state = {
   // custom transition dimensions (independent of source footage size).
   // Default ON: trans is primarily a matte-video builder, so it boots to a
   // fixed canvas showing the B/W matte without requiring any footage.
-  customSize: true, outW: 1920, outH: 1080, previewScale: 'full',  // on-screen render scale; recording always full-res
+  customSize: true, outW: 1920, outH: 1080, previewScale: '1440',  // on-screen preview longer-edge cap (px) or 'full'; recording always full-res
   // output mode — matte-first (B/W luma for AE) by default; bound in Setup,
   // so these must exist before the pane is built.
   matteOutput: true, matteInvert: false,
@@ -2580,11 +2580,16 @@ function computeOutputDims() {
   return { w, h };
 }
 // On-screen downscale (1 = full). Recording ignores this and renders full-res.
+// 'full' = render at the output size; otherwise cap the preview's LONGER edge to
+// an absolute pixel size (e.g. 1440), so making the OUTPUT bigger never makes the
+// live preview heavier — output size stays purely a recording concern.
 function previewScaleFactor(w, h) {
   const ps = state.previewScale;
   if (!ps || ps === 'full' || ps === '1') return 1;
-  const k = parseFloat(ps);
-  return (k > 0 && k < 1) ? k : 1;
+  const cap = parseFloat(ps);                 // longer-edge pixel cap (e.g. 1440)
+  if (!(cap > 0)) return 1;
+  const longer = Math.max(w, h);
+  return longer > cap ? cap / longer : 1;      // only ever scale DOWN
 }
 function resizeCanvas() {
   const minimized = document.body.classList.contains('minimized');
@@ -3487,7 +3492,7 @@ syncSizeFields();
 // big outputs (4k/6k) smooth to scrub.
 fPlay.addBinding(state, 'previewScale', {
   label: 'display',
-  options: { 'Full (= output)': 'full', 'Half': '0.5', 'Quarter': '0.25' },
+  options: { 'Auto (≤1440p, smooth)': '1440', '720p (lightest)': '720', '1080p': '1080', '4K': '3840', 'Full (= output)': 'full' },
 }).on('change', () => resizeCanvas());
 
 // — B/W matte output (always). Invert flips black<->white direction. —
@@ -5146,7 +5151,7 @@ fSamHelp.addBinding(samHelp, 'altClick',   { readonly: true, label: 'alt-click' 
 const SESSION_LS_KEY = 'trans:session';
 // Bump when default values change so stale saved sessions don't mask new
 // defaults (e.g. matte-first, cover texture fit, turbulence, origin).
-const SESSION_VERSION = 18;
+const SESSION_VERSION = 19;
 const PERSIST_KEYS = [
   ...PRESET_KEYS,
   'fit', 'bg',
